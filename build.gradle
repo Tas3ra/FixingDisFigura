@@ -1,0 +1,103 @@
+plugins {
+	id "architectury-plugin" version "3.5.169"
+	id "dev.architectury.loom" version "1.17.491" apply false
+}
+
+architectury {
+	minecraft = rootProject.minecraft_version
+}
+
+subprojects {
+	apply plugin: "dev.architectury.loom"
+
+	loom {
+		silentMojangMappingsLicense()
+	}
+
+	repositories {
+		maven { url = uri("https://maven.terraformersmc.com/releases/") }
+		maven { url = uri("https://api.modrinth.com/maven") }
+		maven { url = uri("https://maven.quiltmc.org/repository/release/") }
+		maven { url = uri("https://maven.neoforged.net/releases/") }
+		maven {
+			name = 'GeckoLib'
+			url = uri("https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/")
+			content {
+				includeGroupByRegex("software\\.bernie.*")
+				includeGroup("com.eliotlash.mclib")
+			}
+		}
+	}
+
+	dependencies {
+		minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
+	}
+}
+
+allprojects {
+	apply plugin: "java"
+	apply plugin: "architectury-plugin"
+	apply plugin: "maven-publish"
+
+	java_version = rootProject.java_version
+	version = rootProject.mod_version + "+" + rootProject.minecraft_version
+	group = rootProject.maven_group
+
+	// I use Gradle's current BasePluginExtension instead of the deprecated archivesBaseName property.
+	base {
+		archivesName = rootProject.archives_base_name
+	}
+
+	String gitHash = ""
+	if (rootProject.file(".git").exists()) {
+		try {
+			def gitProcess = ["git", "rev-parse", "--short", "HEAD"].execute(null, rootProject.projectDir)
+			gitProcess.waitFor()
+			if (gitProcess.exitValue() == 0)
+				gitHash = gitProcess.in.text.trim()
+		} catch (ignored) {}
+	}
+
+	if (project.hasProperty("release") || gitHash.isEmpty()) {
+		jarVersion = version
+	} else {
+		jarVersion = version + "-" + gitHash
+	}
+
+	repositories {
+		// I only add repositories here for dependencies Loom doesn't provide automatically.
+		maven { url = uri("https://jitpack.io") }
+	}
+
+	tasks.withType(JavaCompile).configureEach {
+		options.encoding = "UTF-8"
+		options.release = Integer.valueOf(java_version)
+
+		// I enable these so compiler warnings point to the actual problematic code.
+		options.compilerArgs += [
+			"-Xlint:deprecation",
+			"-Xlint:unchecked"
+		]
+	}
+
+	dependencies {
+		components {
+			withModule("com.neovisionaries:nv-websocket-client") {
+				allVariants {
+					withCapabilities {
+						removeCapability("com.neovisionaries", "nv-websocket-client")
+						addCapability("com.neovisionaries", "nv-websocket-client", "${rootProject.nv_websocket}.0")
+					}
+				}
+			}
+		}
+	}
+
+	java {
+		// I keep the Java compatibility level matched with Figura's configured Java version.
+		sourceCompatibility = JavaVersion.toVersion(java_version)
+		targetCompatibility = JavaVersion.toVersion(java_version)
+
+		withSourcesJar()
+	}
+}

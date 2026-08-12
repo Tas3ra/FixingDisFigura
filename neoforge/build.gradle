@@ -1,0 +1,118 @@
+plugins {
+    id "com.github.johnrengelman.shadow" version "8.1.1"
+}
+
+architectury {
+    platformSetupLoomIde()
+    neoForge()
+}
+
+loom {
+    accessWidenerPath = project(":common").loom.accessWidenerPath
+}
+
+configurations {
+    common
+    shadowCommon // Don't use shadow from the shadow plugin since it *excludes* files.
+    compileClasspath.extendsFrom common
+    runtimeClasspath.extendsFrom common
+    developmentNeoForge.extendsFrom common
+}
+
+dependencies {
+    mappings loom.layered {
+        mappings("org.quiltmc:quilt-mappings:$minecraft_version+build.$mappings:intermediary-v2")
+        officialMojangMappings()
+    }
+
+    // Libraries
+    include(forgeRuntimeLibrary("com.github.FiguraMC.luaj:luaj-core:$luaj-figura"))
+    include(forgeRuntimeLibrary("com.github.FiguraMC.luaj:luaj-jse:$luaj-figura"))
+    include(forgeRuntimeLibrary("com.neovisionaries:nv-websocket-client:$nv_websocket"))
+
+    neoForge "net.neoforged:neoforge:${rootProject.neoforge_version}"
+
+    if (rootProject.run_with_geckolib == "true") {
+        modRuntimeOnly("software.bernie.geckolib:geckolib-neoforge-$geckolib_version")
+        forgeRuntimeLibrary(group: 'com.eliotlash.mclib', name: 'mclib', version: "${mclib_version}")
+    }
+
+    common(project(path: ":common", configuration: "namedElements")) { transitive false }
+    shadowCommon(project(path: ":common", configuration: "transformProductionNeoForge")) { transitive false }
+}
+
+processResources {
+    Map<String, Object> properties = new HashMap<>()
+
+    properties.put("version", project.jarVersion)
+    properties.put("java_version", rootProject.java_version)
+    properties.put("minecraft_version", rootProject.minecraft_version)
+    properties.put("assets_version", rootProject.assets_version)
+
+    properties.forEach((k, v) -> inputs.property(k, v.toString()))
+    filesMatching("META-INF/neoforge.mods.toml") {
+        expand properties
+    }
+}
+
+shadowJar {
+    exclude "fabric.mod.json"
+    exclude "architectury.common.json"
+
+    configurations = [project.configurations.shadowCommon]
+    archiveClassifier.set "dev-shadow"
+}
+
+remapJar {
+    atAccessWideners.add(loom.accessWidenerPath.get().asFile.name)
+    input.set shadowJar.archiveFile
+    dependsOn shadowJar
+    archiveClassifier.set "neoforge-mc"
+}
+
+jar {
+    archiveClassifier.set "dev"
+}
+
+sourcesJar {
+    def commonSources = project(":common").sourcesJar
+    dependsOn commonSources
+    from commonSources.archiveFile.map { zipTree(it) }
+}
+
+components.java {
+    withVariantsFromConfiguration(project.configurations.shadowRuntimeElements) {
+        skip()
+    }
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            artifactId = "${project.archivesBaseName}-${project.name}"
+            version = project.version
+            artifact(remapJar) {
+                builtBy remapJar
+                classifier ''
+            }
+            artifact(sourcesJar) {
+                builtBy sourcesJar
+                classifier 'sources'
+            }
+        }
+    }
+    setupRepositories(repositories)
+}
+
+void setupRepositories(RepositoryHandler repositories) {
+    if (project.hasProperty("mavenUrl")) {
+        repositories.maven {
+            name = "figuraMaven"
+            url project.mavenUrl
+            credentials(PasswordCredentials)
+            authentication {
+                basic(BasicAuthentication)
+            }
+        }
+    }
+}
