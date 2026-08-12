@@ -129,7 +129,7 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
 
         // Set shouldRenderPivots
         int config = Configs.RENDER_DEBUG_PARTS_PIVOT.value;
-        if (!Minecraft.getInstance().debugEntries.isCurrentlyEnabled(DebugScreenEntries.ENTITY_HITBOXES) || (!avatar.isHost && config < 2))
+        if (config <= 1 || !Minecraft.getInstance().debugEntries.isCurrentlyEnabled(DebugScreenEntries.ENTITY_HITBOXES) || (!avatar.isHost && config < 3))
             shouldRenderPivots = 0;
         else
             shouldRenderPivots = config;
@@ -461,8 +461,18 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
     protected void renderPivot(FiguraModelPart part, PartCustomization customization) {
         boolean group = part.customization.partType == PartCustomization.PartType.GROUP;
         FiguraVec3 color = group ? ColorUtils.Colors.FIGURA_BLUE.vec : ColorUtils.Colors.AWESOME_BLUE.vec;
+        double determinant = Math.abs(part.savedPartToWorldMat.det());
+        if (!Double.isFinite(determinant) || !figura$isFinite(customization.positionMatrix) || !figura$isFinite(customization.normalMatrix))
+            return;
+
+        double worldScale = Math.cbrt(determinant);
+        if (!Double.isFinite(worldScale))
+            return;
+
         double boxSize = group ? 1 / 16d : 1 / 32d;
-        boxSize /= Math.max(Math.cbrt(part.savedPartToWorldMat.det()), 0.02);
+        boxSize /= Math.max(worldScale, 0.02);
+        if (!Double.isFinite(boxSize))
+            return;
 
         PoseStack stack = customization.copyIntoGlobalPoseStack();
 
@@ -470,6 +480,19 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
                 -boxSize, -boxSize, -boxSize,
                 boxSize, boxSize, boxSize,
                 (float) color.x, (float) color.y, (float) color.z, 1f);
+    }
+
+    private static boolean figura$isFinite(FiguraMat4 matrix) {
+        return Double.isFinite(matrix.v11) && Double.isFinite(matrix.v12) && Double.isFinite(matrix.v13) && Double.isFinite(matrix.v14) &&
+                Double.isFinite(matrix.v21) && Double.isFinite(matrix.v22) && Double.isFinite(matrix.v23) && Double.isFinite(matrix.v24) &&
+                Double.isFinite(matrix.v31) && Double.isFinite(matrix.v32) && Double.isFinite(matrix.v33) && Double.isFinite(matrix.v34) &&
+                Double.isFinite(matrix.v41) && Double.isFinite(matrix.v42) && Double.isFinite(matrix.v43) && Double.isFinite(matrix.v44);
+    }
+
+    private static boolean figura$isFinite(FiguraMat3 matrix) {
+        return Double.isFinite(matrix.v11) && Double.isFinite(matrix.v12) && Double.isFinite(matrix.v13) &&
+                Double.isFinite(matrix.v21) && Double.isFinite(matrix.v22) && Double.isFinite(matrix.v23) &&
+                Double.isFinite(matrix.v31) && Double.isFinite(matrix.v32) && Double.isFinite(matrix.v33);
     }
 
     public static void renderLineBox(PoseStack.Pose pose, VertexConsumer vertices, double x1, double y1, double z1, double x2, double y2, double z2, float r, float g, float b, float a) {
