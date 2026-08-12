@@ -2,8 +2,6 @@ package org.figuramc.figura.mixin.render.feature;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
-import com.llamalad7.mixinextras.sugar.Share;
-import com.llamalad7.mixinextras.sugar.ref.LocalRef;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -121,22 +119,6 @@ public class NameTagFeatureRenderer$StorageMixin implements NameTagFeatureRender
         original.call(instance, (float) scaleVec.x, (float) scaleVec.y, (float) scaleVec.z);
     }
 
-
-
-    @Inject(at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/vertex/PoseStack$Pose;pose()Lorg/joml/Matrix4f;"), method = "add")
-    private void setShadowMatrix(PoseStack matrices, Vec3 vec3, int i, Component component, boolean bl, int j, double d, CameraRenderState cameraRenderState, CallbackInfo ci, @Share("textMatrix") LocalRef<Matrix4f> textMatrix) {
-        if (!figura$enabled || figura$avatar == null || !figura$hasCustomNameplate || !figura$custom.shadow)
-            return;
-
-        textMatrix.set(matrices.last().pose());
-        if (figura$enabled && figura$avatar != null && figura$hasCustomNameplate && figura$custom.shadow) {
-            matrices.pushPose();
-            textMatrix.set(matrices.last().pose());
-            matrices.popPose();
-        }
-    }
-
-
     @WrapOperation(method = "add",
             at = @At(value = "INVOKE", target =
                     "Ljava/util/List;add(Ljava/lang/Object;)Z"
@@ -179,15 +161,16 @@ public class NameTagFeatureRenderer$StorageMixin implements NameTagFeatureRender
             at = @At(value = "INVOKE", target =
                     "Ljava/util/List;add(Ljava/lang/Object;)Z"
                     , ordinal = 0))
-    private <E> boolean drawWithOutline(List<E> instance, E e, Operation<Boolean> original, @Share("textMatrix") LocalRef<Matrix4f> textMatrix) {
+    private <E> boolean drawWithOutline(List<E> instance, E e, Operation<Boolean> original) {
         SubmitNodeStorage.NameTagSubmit submit = (SubmitNodeStorage.NameTagSubmit) e;
 
         Font font = Minecraft.getInstance().font;
 
         Matrix4f pose = submit.pose();
+        int light = figura$custom != null && figura$custom.light != null ? figura$custom.light : submit.lightCoords();
         int color = submit.color();
+        int backgroundColor = submit.backgroundColor() != 0 && figura$custom != null && figura$custom.background != null ? figura$custom.background : submit.backgroundColor();
         boolean deadmau = submit.text().getString().equals("deadmau5");
-        Matrix4f shadowMatrix = textMatrix.get() != null ? textMatrix.get() : pose;
         if (figura$enabled && figura$avatar != null && figura$hasCustomNameplate && figura$custom.outline) {
             // This renders the opaque text with an outline if the player has that enabled.
             int outlineColor = figura$custom.outlineColor != null ? figura$custom.outlineColor : 0x202020;
@@ -203,12 +186,14 @@ public class NameTagFeatureRenderer$StorageMixin implements NameTagFeatureRender
                     float x = -font.width(text1) / 2f;
                     float y = (deadmau ? -10f : 0f) + (font.lineHeight + 1) * line;
                     // yes i am using the bg color field to store the outline color, sue me
-                    figura$outlineSubmits.add(new SubmitNodeStorage.NameTagSubmit(pose, x, y, text1,  submit.lightCoords(), color, outlineColor, submit.distanceToCameraSq()));
+                    figura$outlineSubmits.add(new SubmitNodeStorage.NameTagSubmit(pose, x, y, text1, light, color, outlineColor, submit.distanceToCameraSq()));
+                    figura$addBackgroundOnly(instance, original, submit, x, y, text1, light, backgroundColor);
                 }
+                return true;
             } else {
-                figura$outlineSubmits.add(new SubmitNodeStorage.NameTagSubmit(pose, submit.x(), submit.y(), submit.text(),  submit.lightCoords(), color, outlineColor, submit.distanceToCameraSq()));
+                figura$outlineSubmits.add(new SubmitNodeStorage.NameTagSubmit(pose, submit.x(), submit.y(), submit.text(), light, color, outlineColor, submit.distanceToCameraSq()));
+                return figura$addBackgroundOnly(instance, original, submit, submit.x(), submit.y(), submit.text(), light, backgroundColor);
             }
-            return original.call(instance, new SubmitNodeStorage.NameTagSubmit(shadowMatrix, submit.x(), submit.y(), Component.empty(),  submit.lightCoords(), color, submit.backgroundColor(), submit.distanceToCameraSq()));
         } else {
             if (figura$enabled && figura$avatar != null && figura$hasCustomNameplate && figura$isRenderingName) {
                 // This renders the opaque part of the nametag, that is text
@@ -221,13 +206,41 @@ public class NameTagFeatureRenderer$StorageMixin implements NameTagFeatureRender
                     int line = i - figura$textList.size() + 1;
                     float x = -font.width(text1) / 2f;
                     float y = (deadmau ? -10f : 0f) + (font.lineHeight + 1) * line;
-                    original.call(instance, new SubmitNodeStorage.NameTagSubmit(shadowMatrix, x, y, text1, submit.lightCoords(), color, submit.backgroundColor(), submit.distanceToCameraSq()));
+                    figura$addTextWithShadow(instance, original, submit, x, y, text1, light, color, backgroundColor);
                 }
                 return true;
             } else {
-                return original.call(instance, new SubmitNodeStorage.NameTagSubmit(shadowMatrix, submit.x(), submit.y(), submit.text(),  submit.lightCoords(), color, submit.backgroundColor(), submit.distanceToCameraSq()));
+                return figura$addTextWithShadow(instance, original, submit, submit.x(), submit.y(), submit.text(), light, color, backgroundColor);
             }
         }
+    }
+
+    @Unique
+    private <E> boolean figura$addTextWithShadow(List<E> instance, Operation<Boolean> original, SubmitNodeStorage.NameTagSubmit submit,
+                                                 float x, float y, Component text, int light, int color, int backgroundColor) {
+        if (figura$enabled && figura$avatar != null && figura$hasCustomNameplate && figura$custom.shadow) {
+            original.call(instance, new SubmitNodeStorage.NameTagSubmit(submit.pose(), x + 1f, y + 1f, text, light, figura$shadowColor(color), 0, submit.distanceToCameraSq()));
+        }
+
+        return original.call(instance, new SubmitNodeStorage.NameTagSubmit(submit.pose(), x, y, text, light, color, backgroundColor, submit.distanceToCameraSq()));
+    }
+
+    @Unique
+    private <E> boolean figura$addBackgroundOnly(List<E> instance, Operation<Boolean> original, SubmitNodeStorage.NameTagSubmit submit,
+                                                 float x, float y, Component text, int light, int backgroundColor) {
+        if (backgroundColor == 0)
+            return true;
+
+        return original.call(instance, new SubmitNodeStorage.NameTagSubmit(submit.pose(), x, y, text, light, 0, backgroundColor, submit.distanceToCameraSq()));
+    }
+
+    @Unique
+    private static int figura$shadowColor(int color) {
+        int alpha = color & 0xFF000000;
+        if (alpha == 0)
+            alpha = 0xFF000000;
+
+        return alpha | ((color & 0xFCFCFC) >> 2);
     }
 
     @Inject(method = "clear", at = @At("HEAD"))

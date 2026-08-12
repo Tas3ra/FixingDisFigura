@@ -86,13 +86,26 @@ public class TextTask extends RenderTask {
             int x = -alignment.apply(font, text);
 
             if (outline) {
-                font.drawInBatch8xOutline(text.getVisualOrderText(), x, j, -1, out, matrix, buffer, l);
-                if (seeThrough)
-                    font.drawInBatch(text, x, j, op, shadow, matrix, buffer, displayMode, 0, l);
+                figura$drawOutlinedText(font, text, x, j, op, out, matrix, buffer, displayMode, l);
             } else {
-                font.drawInBatch(text, x, j, op, shadow, matrix, buffer, displayMode, 0, l);
+                font.drawInBatch(text, x, j, op, shadow && !seeThrough, matrix, buffer, displayMode, 0, l);
             }
         }
+    }
+
+    private static void figura$drawOutlinedText(Font font, Component text, float x, float y, int color, int outlineColor,
+                                                Matrix4f matrix, MultiBufferSource buffer, Font.DisplayMode displayMode, int light) {
+        int outline = (color & 0xFF000000) | (outlineColor & 0x00FFFFFF);
+        for (int xOffset = -1; xOffset <= 1; xOffset++) {
+            for (int yOffset = -1; yOffset <= 1; yOffset++) {
+                if (xOffset == 0 && yOffset == 0)
+                    continue;
+
+                font.drawInBatch(text, x + xOffset, y + yOffset, outline, false, matrix, buffer, displayMode, 0, light);
+            }
+        }
+
+        font.drawInBatch(text, x, y, color, false, matrix, buffer, displayMode, 0, light);
     }
 
     @Override
