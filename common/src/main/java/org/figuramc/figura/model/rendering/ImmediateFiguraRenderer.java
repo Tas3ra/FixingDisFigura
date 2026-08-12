@@ -69,6 +69,8 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
         // flag rendering state
         this.isRendering = true;
 
+        pivotCustomizations.values().forEach(Queue::clear);
+
         // setup root customizations
         PartCustomization customization = setupRootCustomization(1.5d);
 
@@ -580,6 +582,15 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
             FiguraMod.popPushProfiler("worldMatrices");
             FiguraMat4 mat = partToWorldMatrices(custom);
             part.savedPartToWorldMat.set(mat);
+
+            if (part.parentType.isPivot && allowPivotParts) {
+                FiguraVec3 pivot = custom.getPivot().copy().add(custom.getOffsetPivot());
+                pivotOffsetter.setPos(pivot);
+                pivotOffsetter.recalculate();
+                customizationStack.push(pivotOffsetter);
+                savePivotTransform(part.parentType, customizationStack.peek());
+                customizationStack.pop();
+            }
         }
 
         // render children
