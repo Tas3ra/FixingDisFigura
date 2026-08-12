@@ -1,0 +1,19 @@
+{
+  "required": true,
+  "package": "org.figuramc.figura.mixin.forge",
+  "compatibilityLevel": "JAVA_17",
+  "minVersion": "0.8",
+  "client": [
+    "ClientCommandSourceMixinForge",
+    "CommandSuggestionsMixinForge",
+    "ElytraLayerAccessor",
+    "GuiMixin",
+    "HumanoidArmorLayerMixinForge",
+    "LevelRendererMixinForge"
+  ],
+  "mixins": [
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

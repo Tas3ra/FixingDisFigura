@@ -1,0 +1,31 @@
+{
+  "providers": [
+    {
+      "type": "space",
+      "advances": {
+        " ": 4,
+        "\u200C": 0
+      }
+    },
+    {
+      "type": "bitmap",
+      "file": "figura:font/arrows.png",
+      "ascent": 8,
+      "chars": [">V<^"]
+    },
+    {
+      "type": "bitmap",
+      "file": "figura:font/status.png",
+      "ascent": 8,
+      "height": 10,
+      "chars": ["-*/+="]
+    },
+    {
+      "type": "bitmap",
+      "file": "figura:font/icons.png",
+      "ascent": 8,
+      "height": 10,
+      "chars": ["★\uD83D\uDD0E?"]
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+modLoader = "javafml"
+loaderVersion = "[1,)"
+issueTrackerURL = "https://github.com/FiguraMC/Figura/issues"
+license = "Polyform-Noncommercial-1.0.0"
+displayURL = "https://github.com/FiguraMC/Figura"
+
+[[mods]]
+modId = "figura"
+version = "${version}"
+displayName = "Figura"
+logoFile="icon.png"
+authors = "skyrina, lumelia, UnlikePaladin, omoflop"
+credits = "TooManyLimits, Lexize, KitCat962, Manuel-3, superpowers04, auriafoxgirl, applejuiceyy"
+description = '''
+Extensive customization of the Player model
+'''
+
+[modproperties.figura]
+assets_version="${assets_version}"
+
+[[dependencies.figura]]
+modId = "neoforge"
+mandatory = true
+versionRange = "[21.3,)"
+ordering = "NONE"
+side = "CLIENT"
+
+[[dependencies.figura]]
+modId = "minecraft"
+mandatory = true
+versionRange = "[${minecraft_version},)"
+ordering = "NONE"
+side = "CLIENT"
+
+[[mixins]]
+config = "figura-common.mixins.json"
+[[mixins]]
+config = "figura.mixins.json"

@@ -1,0 +1,14 @@
+# Sets up the VScode extensions required for our GitPod script,
+# which includes notifying user if port "25565" should be opened.
+
+image:
+  file: .gitpod.Dockerfile
+
+ports:
+  - port: 25565
+    onOpen: notify
+
+vscode:
+  extensions:
+    - richardwillis.vscode-gradle
+    - vscjava.vscode-java-pack

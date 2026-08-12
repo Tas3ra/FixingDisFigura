@@ -1,0 +1,56 @@
+# Gradle
+
+.gradle/
+build/
+out/
+classes/
+
+# Local agent / Codex metadata
+
+.agents/
+.codex/
+.openai/
+AGENTS.md
+
+# Eclipse
+
+*.launch
+
+# Idea
+
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Minecraft
+run/
+runV2/
+
+# VScode
+
+.settings/
+.vscode/
+bin/
+.classpath
+.project
+
+# macOS
+
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Fabric
+
+remappedSrc/
+*.cap
+*.rdc
+/Merged/
+
+# Forge MDK
+
+forge*changelog.txt
+
+# Used for testing against other mods
+libs/*

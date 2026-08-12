@@ -1,0 +1,26 @@
+package org.figuramc.figura.mixin.render;
+
+import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.resources.Identifier;
+import org.spongepowered.asm.mixin.Intrinsic;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.gen.Accessor;
+import org.spongepowered.asm.mixin.gen.Invoker;
+
+import java.util.Map;
+
+@Mixin(value = TextureAtlas.class, priority = 900)
+public interface TextureAtlasAccessor {
+    @Intrinsic
+    @Accessor("texturesByName")
+    Map<Identifier, TextureAtlasSprite> figura$getTexturesByName();
+
+    @Intrinsic
+    @Invoker("getWidth")
+    int figura$getWidth();
+
+    @Intrinsic
+    @Invoker("getHeight")
+    int figura$getHeight();
+}

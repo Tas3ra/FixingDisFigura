@@ -1,0 +1,44 @@
+{
+  "providers": [
+    {
+      "type": "space",
+      "advances": {
+        " ": 4,
+        "\u200C": 0
+      }
+    },
+    {
+      "type": "bitmap",
+      "file": "figura:font/badges.png",
+      "ascent": 8,
+      "chars": [
+        "△❗❌\uD83D\uDEE1",
+        "★☆❤文",
+        "✒\uD83D\uDDFF\uD83D\uDD0A\u0000"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "figura:font/pride.png",
+      "ascent": 8,
+      "chars": [
+        "ᚠᚡᚢᚣᚤ",
+        "ᚥᚦᚧᚨᚩ",
+        "ᚪᚫᚬᚭᚮ",
+        "ᚯᚰᚱᚲᚳ",
+        "ᚴᚵᚶᚷᚸ"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "figura:font/loading.png",
+      "ascent": 8,
+      "chars": [
+        "0123",
+        "4567",
+        "89ab",
+        "cdef"
+      ]
+    }
+  ]
+}

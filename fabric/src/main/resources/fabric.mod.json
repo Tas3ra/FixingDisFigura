@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "id": "figura",
+  "version": "${version}",
+
+  "name": "Figura",
+  "description": "Extensive customization of the Player model",
+  "authors": [
+    "skyrina", "lumelia", "UnlikePaladin", "omoflop"
+  ],
+  "contributors": [
+    "TooManyLimits", "Lexize", "KitCat962", "Manuel-3", "superpowers04", "auriafoxgirl", "applejuiceyy"
+  ],
+  "contact": {
+    "homepage": "https://github.com/FiguraMC/Figura",
+    "issues": "https://github.com/FiguraMC/Figura/issues"
+  },
+
+  "license": "Polyform-Noncommercial-1.0.0",
+  "icon": "assets/figura/icon.png",
+
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "org.figuramc.figura.fabric.FiguraModFabric"
+    ],
+    "modmenu": [
+      "org.figuramc.figura.config.fabric.ModMenuConfig"
+    ]
+  },
+  "mixins": [
+    "figura.mixins.json",
+    "figura-common.mixins.json"
+  ],
+  "depends": {
+    "java": ">=${java_version}",
+    "minecraft":  "<=${minecraft_version} >1.21.1",
+    "fabricloader": ">=0.15"
+  },
+  "conflicts": {
+    "immersive_portals": "*",
+    "canvas": "*",
+    "immediatelyfast":  "*"
+  },
+  "custom": {
+    "assets_version": "${assets_version}",
+    "modmenu": {
+      "links": {
+        "Discord": "https://discord.figuramc.org/",
+        "Ko-fi": "https://ko-fi.com/skyrina",
+        "Open Collective": "https://opencollective.com/figura",
+        "Modrinth":  "https://modrinth.com/mod/figura/",
+        "GitHub":  "https://github.com/FiguraMC/Figura"
+      }
+    }
+  }
+}
