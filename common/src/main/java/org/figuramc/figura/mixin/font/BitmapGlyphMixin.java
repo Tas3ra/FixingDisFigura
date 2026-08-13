@@ -21,6 +21,12 @@ public class BitmapGlyphMixin implements BitmapProviderGlyphAccessor {
     @Mutable
     @Shadow
     private int advance;
+    @Final
+    @Shadow
+    private float scale;
+    @Final
+    @Shadow
+    private int width;
     @Unique
     private EmojiContainer figura$emojiContainer;
     @Unique
@@ -41,7 +47,7 @@ public class BitmapGlyphMixin implements BitmapProviderGlyphAccessor {
     private void figura$setupBakedEmoji(UnbakedGlyph.Stitcher stitcher, CallbackInfoReturnable<BakedGlyph> cir) {
         BakedGlyph glyph = cir.getReturnValue();
         if (glyph != null && figura$emojiContainer != null && figura$emojiCodePoint >= 0 && glyph instanceof BakedGlyphAccessor accessor) {
-            accessor.figura$setupEmoji(figura$emojiContainer, figura$emojiCodePoint);
+            accessor.figura$setupEmoji(figura$emojiContainer, figura$emojiCodePoint, width, scale);
         }
     }
 }
