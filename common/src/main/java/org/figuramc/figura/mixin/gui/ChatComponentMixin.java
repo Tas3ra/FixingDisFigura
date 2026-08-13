@@ -127,7 +127,7 @@ public class ChatComponentMixin {
                 continue;
 
             Component replacement = custom != null && custom.getJson() != null && avatar.permissions.get(Permissions.NAMEPLATE_EDIT) == 1 ?
-                    TextUtils.replaceInText(custom.getJson().copy(), "\n|\\\\n", " ") : playerName;
+                    TextUtils.collapseLineSeparators(custom.getJson().copy()) : playerName;
 
             // name
             replacement = TextUtils.replaceInText(replacement, "\\$\\{name\\}", playerName);

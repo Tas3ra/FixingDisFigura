@@ -3,6 +3,7 @@ package org.figuramc.figura.utils;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.JsonPrimitive;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.JsonOps;
 import com.mojang.serialization.MapCodec;
@@ -36,8 +37,22 @@ public class TextUtils {
     public static final Component TAB = FiguraText.of("tab");
     public static final Component ELLIPSIS = FiguraText.of("ellipsis");
     public static final Component UNKNOWN = Component.literal("�").withStyle(Style.EMPTY);
+    private static final String LINE_SEPARATOR_REGEX = "\\r\\n|\\n|\\r|\\\\r\\\\n|\\\\n|\\\\r";
 
     public static boolean allowScriptEvents;
+
+    public static List<Component> splitLines(FormattedText text) {
+        return splitText(text, LINE_SEPARATOR_REGEX);
+    }
+
+    public static Component collapseLineSeparators(FormattedText text) {
+        MutableComponent ret = Component.empty();
+        text.visit((style, string) -> {
+            ret.append(Component.literal(string.replaceAll(LINE_SEPARATOR_REGEX, " ")).withStyle(style));
+            return Optional.empty();
+        }, Style.EMPTY);
+        return ret;
+    }
 
     public static List<Component> splitText(FormattedText text, String regex) {
         // list to return
@@ -95,25 +110,11 @@ public class TextUtils {
         try {
             // check if its valid json text
             JsonElement object = JsonParser.parseString(text);
-            
+
             // this is to account for click and hover events being reworked in 1.21.5, they say every mod devolves into
             // some form of via version eventually, the rumors were true...
-            if (object.isJsonObject()) {
-                JsonObject obj = object.getAsJsonObject();
-                if (obj.has("clickEvent")) {
-                    JsonElement clickEvent = obj.get("clickEvent");
-                    JsonObject replacement = convertClickEvent(clickEvent);
-                    obj.remove("clickEvent");
-                    obj.add("click_event", replacement);
-                }
-                if (obj.has("hoverEvent")) {
-                    JsonElement hoverEvent = obj.get("hoverEvent");
-                    JsonObject replacement = convertHoverEvent(hoverEvent);
-                    obj.remove("hoverEvent");
-                    obj.add("hover_event", replacement);
-                }
-            }
-            
+            convertLegacyTextEvents(object);
+
             // attempt to parse json
             finalText = ComponentSerialization.CODEC.decode(OPS, object).getOrThrow().getFirst();
 
@@ -129,56 +130,80 @@ public class TextUtils {
         return finalText;
     }
 
+    private static void convertLegacyTextEvents(JsonElement element) {
+        if (element == null || element.isJsonNull())
+            return;
+
+        if (element.isJsonArray()) {
+            for (JsonElement child : element.getAsJsonArray())
+                convertLegacyTextEvents(child);
+            return;
+        }
+
+        if (!element.isJsonObject())
+            return;
+
+        JsonObject obj = element.getAsJsonObject();
+        if (obj.has("clickEvent")) {
+            JsonObject replacement = convertClickEvent(obj.get("clickEvent"));
+            obj.remove("clickEvent");
+            if (!obj.has("click_event") && replacement.size() > 0)
+                obj.add("click_event", replacement);
+        }
+
+        if (obj.has("hoverEvent")) {
+            JsonObject replacement = convertHoverEvent(obj.get("hoverEvent"));
+            obj.remove("hoverEvent");
+            if (!obj.has("hover_event") && replacement.size() > 0)
+                obj.add("hover_event", replacement);
+        }
+
+        for (Map.Entry<String, JsonElement> entry : new ArrayList<>(obj.entrySet()))
+            convertLegacyTextEvents(entry.getValue());
+    }
+
     private static @NotNull JsonObject convertHoverEvent(JsonElement hoverEvent) {
         JsonObject replacement = new JsonObject();
-        if (hoverEvent.isJsonObject()) {
-            JsonObject event = hoverEvent.getAsJsonObject();
-            if (event.has("action")) {
-                JsonElement action = event.get("action");
-                switch (action.getAsString()) {
-                    case "show_text": {
-                        replacement.addProperty("action", "show_text");
-                        if (event.has("value")) {
-                            String value = event.get("value").getAsString();
-                            replacement.addProperty("value", value);
-                        } else if (event.has("contents")) {
-                            String content = event.get("contents").getAsString();
-                            replacement.addProperty("value", content);
-                        }
-                        break;
-                    }
-                    case "show_item": {
-                        replacement.addProperty("action", "show_item");
-                        if (event.has("contents") && event.get("contents").isJsonObject()) {
-                            JsonObject content = event.get("contents").getAsJsonObject();
-                            // inlines contents to match new format
-                            for (Map.Entry<String, JsonElement> entry : content.entrySet()) {
-                                replacement.addProperty(entry.getKey(), entry.getValue().getAsString());
-                            }
-                        } else if (event.has("contents")) {
-                            String id = event.get("contents").getAsString();
-                            replacement.addProperty("id", id);
-                        }
-                        break;
-                    }
-                    case "show_entity": {
-                        replacement.addProperty("action", "show_entity");
-                        if (event.has("contents") && event.get("contents").isJsonObject()) {
-                            JsonObject content = event.get("contents").getAsJsonObject();
-                            // inlines contents to match new format
-                            for (Map.Entry<String, JsonElement> entry : content.entrySet()) {
-                                String key = entry.getKey();
-                                if (key.equals("id"))
-                                    key = "uuid";
-                                else if(key.equals("type"))
-                                    key = "id";
+        if (!hoverEvent.isJsonObject())
+            return replacement;
 
-                                replacement.addProperty(key, entry.getValue().getAsString());
-                            }
-                        }
-                        break;
-                    }
+        JsonObject event = hoverEvent.getAsJsonObject();
+        JsonElement actionElement = event.get("action");
+        if (actionElement == null || !actionElement.isJsonPrimitive())
+            return replacement;
+
+        String action = actionElement.getAsString();
+        replacement.addProperty("action", action);
+        switch (action) {
+            case "show_text": {
+                JsonElement value = getFirst(event, "value", "contents");
+                if (value == null)
+                    value = new JsonPrimitive("");
+                replacement.add("value", normalizeTextComponentValue(value));
+                break;
+            }
+            case "show_item": {
+                JsonElement item = getFirst(event, "contents", "value");
+                copyInlineObjectOrString(item, replacement, "id");
+                break;
+            }
+            case "show_entity": {
+                JsonElement entity = getFirst(event, "contents", "value");
+                JsonObject source = entity != null && entity.isJsonObject() ? entity.getAsJsonObject() : event;
+                for (Map.Entry<String, JsonElement> entry : source.entrySet()) {
+                    String key = switch (entry.getKey()) {
+                        case "type" -> "id";
+                        case "id" -> "uuid";
+                        default -> entry.getKey();
+                    };
+
+                    if (key.equals("action") || key.equals("contents") || key.equals("value"))
+                        continue;
+
+                    JsonElement value = key.equals("name") ? normalizeTextComponentValue(entry.getValue()) : entry.getValue().deepCopy();
+                    replacement.add(key, value);
                 }
+                break;
             }
         }
         return replacement;
@@ -186,48 +211,80 @@ public class TextUtils {
 
     private static @NotNull JsonObject convertClickEvent(JsonElement clickEvent) {
         JsonObject replacement = new JsonObject();
-        if (clickEvent.isJsonObject()) {
-            JsonObject event = clickEvent.getAsJsonObject();
-            if (event.has("action") && event.has("value")) {
-                JsonElement action = event.get("action");
-                switch (action.getAsString()) {
-                    case "open_url": {
-                        replacement.addProperty("action", "open_url");
-                        String url = event.get("value").getAsString();
-                        if (!url.startsWith("http"))
-                            url = "http://" + url;
-                        replacement.addProperty("url", url);
-                        break;
-                    }
-                    case "run_command": {
-                        replacement.addProperty("action", "run_command");
-                        String command = event.get("value").getAsString();
-                        replacement.addProperty("command", command);
-                        break;
-                    }
-                    case "suggest_command": {
-                        replacement.addProperty("action", "suggest_command");
-                        String command = event.get("value").getAsString();
-                        replacement.addProperty("suggest_command", command);
-                        break;
-                    }
-                    case "change_page": {
-                        replacement.addProperty("action", "change_page");
-                        String page = event.get("value").getAsString();
-                        Integer pageVal = Integer.parseInt(page);
-                        replacement.addProperty("page", pageVal);
-                        break;
-                    }
-                    case "copy_to_clipboard": {
-                        replacement.addProperty("action", "copy_to_clipboard");
-                        String value = event.get("value").getAsString();
-                        replacement.addProperty("value", value);
-                        break;
-                    }
-                }
+        if (!clickEvent.isJsonObject())
+            return replacement;
+
+        JsonObject event = clickEvent.getAsJsonObject();
+        JsonElement actionElement = event.get("action");
+        JsonElement valueElement = event.get("value");
+        if (actionElement == null || valueElement == null || !actionElement.isJsonPrimitive())
+            return replacement;
+
+        String action = actionElement.getAsString();
+        replacement.addProperty("action", action);
+        switch (action) {
+            case "open_url": {
+                String url = valueElement.getAsString();
+                if (!url.startsWith("http"))
+                    url = "http://" + url;
+                replacement.addProperty("url", url);
+                break;
+            }
+            case "open_file": {
+                replacement.add("path", valueElement.deepCopy());
+                break;
+            }
+            case "run_command", "suggest_command": {
+                replacement.add("command", valueElement.deepCopy());
+                break;
+            }
+            case "change_page": {
+                replacement.addProperty("page", valueElement.getAsInt());
+                break;
+            }
+            case "copy_to_clipboard": {
+                replacement.add("value", valueElement.deepCopy());
+                break;
             }
         }
         return replacement;
+    }
+
+    private static JsonElement normalizeTextComponentValue(JsonElement value) {
+        JsonElement copy = value.deepCopy();
+        if (copy.isJsonPrimitive() && copy.getAsJsonPrimitive().isString()) {
+            String string = copy.getAsString();
+            try {
+                JsonElement parsed = JsonParser.parseString(string);
+                if (parsed.isJsonObject() || parsed.isJsonArray() || (parsed.isJsonPrimitive() && parsed.getAsJsonPrimitive().isString()))
+                    copy = parsed;
+            } catch (Exception ignored) {
+            }
+        }
+
+        convertLegacyTextEvents(copy);
+        return copy;
+    }
+
+    private static JsonElement getFirst(JsonObject object, String... keys) {
+        for (String key : keys) {
+            if (object.has(key))
+                return object.get(key);
+        }
+        return null;
+    }
+
+    private static void copyInlineObjectOrString(JsonElement source, JsonObject target, String stringKey) {
+        if (source == null || source.isJsonNull())
+            return;
+
+        if (source.isJsonObject()) {
+            for (Map.Entry<String, JsonElement> entry : source.getAsJsonObject().entrySet())
+                target.add(entry.getKey(), entry.getValue().deepCopy());
+            return;
+        }
+
+        target.add(stringKey, source.deepCopy());
     }
 
     public static Component replaceInText(FormattedText text, String regex, Object replacement) {
@@ -296,7 +353,7 @@ public class TextUtils {
 
     public static List<FormattedCharSequence> wrapTooltip(FormattedText text, Font font, int mousePos, int screenWidth, int offset) {
         // first split the new line text
-        List<Component> splitText = TextUtils.splitText(text, "\n");
+        List<Component> splitText = TextUtils.splitLines(text);
 
         // get the possible tooltip width
         int left = mousePos - offset;
@@ -308,8 +365,16 @@ public class TextUtils {
         // get the optimal side for warping
         int side = largest <= right ? right : largest <= left ? left : Math.max(left, right);
 
-        // warp the unmodified text
-        return wrapText(text, side, font);
+        // wrap each line separately so line-feed control glyphs do not reach the font renderer
+        List<FormattedCharSequence> wrapped = new ArrayList<>();
+        for (Component line : splitText) {
+            List<FormattedCharSequence> wrappedLine = wrapText(line, side, font);
+            if (wrappedLine.isEmpty())
+                wrapped.add(Language.getInstance().getVisualOrder(line));
+            else
+                wrapped.addAll(wrappedLine);
+        }
+        return wrapped;
     }
 
     // get the largest text width from a list
@@ -497,21 +562,27 @@ public class TextUtils {
 
     public static List<Component> formatInBounds(FormattedText text, Font font, int maxWidth, boolean wrap) {
         if (maxWidth > 0) {
+            List<Component> lines = splitLines(text);
             if (wrap) {
-                List<FormattedCharSequence> warped = wrapText(text, maxWidth, font);
                 List<Component> newList = new ArrayList<>();
-                for (FormattedCharSequence charSequence : warped)
-                    newList.add(charSequenceToText(charSequence));
+                for (Component line : lines) {
+                    List<FormattedCharSequence> warped = wrapText(line, maxWidth, font);
+                    if (warped.isEmpty()) {
+                        newList.add(line);
+                    } else {
+                        for (FormattedCharSequence charSequence : warped)
+                            newList.add(charSequenceToText(charSequence));
+                    }
+                }
                 return newList;
             } else {
-                List<Component> list = splitText(text, "\n");
                 List<Component> newList = new ArrayList<>();
-                for (Component component : list)
+                for (Component component : lines)
                     newList.add(formattedTextToText(font.substrByWidth(component, maxWidth)));
                 return newList;
             }
         } else {
-            return splitText(text, "\n");
+            return splitLines(text);
         }
     }
 

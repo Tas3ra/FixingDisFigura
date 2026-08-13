@@ -158,20 +158,20 @@ public class RenderUtils {
         throw new AssertionError();
     }
 
-    static final ItemStackRenderState itemStackRenderState = new ItemStackRenderState();
     public static void renderStatic(LivingEntity entity, ItemStack item, ItemDisplayContext displayMode, PoseStack poseStack, int newLight, int newOverlay) {
         Minecraft client = Minecraft.getInstance();
         FeatureRenderDispatcher featureRenderDispatcher = client.gameRenderer.getFeatureRenderDispatcher();
         SubmitNodeStorage submitNodeStorage = featureRenderDispatcher.getSubmitNodeStorage();
-        try {
-            if (entity != null)
-                client.getItemModelResolver().updateForLiving(itemStackRenderState, item, displayMode, entity);
-            else
-                client.getItemModelResolver().updateForTopItem(itemStackRenderState, item, displayMode, client.level, null, 0);
-            itemStackRenderState.submit(poseStack, submitNodeStorage, newLight, newOverlay, 0);
-        } finally {
-            itemStackRenderState.clear();
-        }
+        ItemStackRenderState itemStackRenderState = new ItemStackRenderState();
+
+        if (entity != null)
+            client.getItemModelResolver().updateForLiving(itemStackRenderState, item, displayMode, entity);
+        else
+            client.getItemModelResolver().updateForTopItem(itemStackRenderState, item, displayMode, client.level, null, 0);
+
+        // SubmitNodeCollection keeps references to the layer quad lists and tint arrays.
+        // Clearing or reusing this state before the feature renderer consumes it makes item tasks disappear.
+        itemStackRenderState.submit(poseStack, submitNodeStorage, newLight, newOverlay, 0);
     }
 
 

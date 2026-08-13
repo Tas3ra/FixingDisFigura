@@ -69,7 +69,7 @@ public class NameTagFeatureRenderer$StorageMixin implements NameTagFeatureRender
         figura$hasCustomNameplate = figura$custom != null && figura$avatar.permissions.get(Permissions.NAMEPLATE_EDIT) == 1;
         figura$enabled =  Configs.ENTITY_NAMEPLATE.value > 0 && !AvatarManager.panic && figura$hasCustomNameplate;
 
-        figura$textList = TextUtils.splitText(component, "\n");
+        figura$textList = TextUtils.splitLines(component);
     }
 
     @Inject(at = @At(value = "TAIL"), method = "add")

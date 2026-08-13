@@ -6,6 +6,7 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.SubmitNodeStorage;
 import net.minecraft.client.renderer.feature.NameTagFeatureRenderer;
 import org.figuramc.figura.ducks.NameTagFeatureRenderer$StorageExtension;
+import org.figuramc.figura.utils.TextRenderUtils;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -18,8 +19,9 @@ public class NameTagFeatureRendererMixin {
                                     @Local(argsOnly = true) Font font, @Local NameTagFeatureRenderer.Storage storage) {
         NameTagFeatureRenderer$StorageExtension storageExt = (NameTagFeatureRenderer$StorageExtension) storage;
         for (SubmitNodeStorage.NameTagSubmit outlineText : storageExt.getOutlineSubmits()) {
-            font.drawInBatch8xOutline(outlineText.text().getVisualOrderText(), outlineText.x(), outlineText.y(), outlineText.color(),
-                    outlineText.backgroundColor(), outlineText.pose(), bufferSource, outlineText.lightCoords());
+            TextRenderUtils.drawOutlinedText(font, outlineText.text().getVisualOrderText(), outlineText.x(), outlineText.y(),
+                    outlineText.color(), outlineText.backgroundColor(), outlineText.pose(), bufferSource, Font.DisplayMode.SEE_THROUGH,
+                    outlineText.lightCoords());
         }
     }
 }

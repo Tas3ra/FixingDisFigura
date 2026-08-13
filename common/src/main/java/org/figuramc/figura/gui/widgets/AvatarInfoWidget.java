@@ -89,7 +89,7 @@ public class AvatarInfoWidget implements FiguraWidget, FiguraTickable, GuiEventL
         // special author stuff
         int authorFreeLines = maxLines - 7;
         Component authors = values.get(1);
-        List<Component> authorLines = authors == null ? Collections.emptyList() : TextUtils.splitText(authors, "\n");
+        List<Component> authorLines = authors == null ? Collections.emptyList() : TextUtils.splitLines(authors);
         int authorUsedLines = Math.min(authorLines.size(), authorFreeLines);
 
         // set new widget height

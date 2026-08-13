@@ -178,7 +178,7 @@ public class PlayerPermPackElement extends AbstractPermPackElement {
                 name = ogName;
 
             name = TextUtils.replaceInText(name, "\\$\\{name\\}", ogName);
-            name = TextUtils.splitText(name, "\n").get(0);
+            name = TextUtils.splitLines(name).get(0);
             name = Component.empty().append(name.copy().withStyle(Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(Component.literal(this.name + "\n" + this.owner)))));
 
             // badges

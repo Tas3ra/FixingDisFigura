@@ -1,5 +1,7 @@
 package org.figuramc.figura.mixin.fabric;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.pipeline.RenderTarget;
@@ -14,6 +16,7 @@ import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.state.LivingEntityRenderState;
 import net.minecraft.client.renderer.feature.FeatureRenderDispatcher;
+import net.minecraft.client.renderer.state.CameraRenderState;
 import net.minecraft.client.renderer.state.LevelRenderState;
 import net.minecraft.util.Mth;
 import net.minecraft.util.profiling.ProfilerFiller;
@@ -26,7 +29,9 @@ import org.figuramc.figura.config.Configs;
 import org.figuramc.figura.math.matrix.FiguraMat3;
 import org.figuramc.figura.mixin.render.PoseStackAccessor;
 import org.figuramc.figura.utils.RenderUtils;
+import org.figuramc.figura.utils.TextRenderUtils;
 import org.joml.Matrix4f;
+import org.objectweb.asm.Opcodes;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -49,6 +54,11 @@ public class LevelRendererMixinFabric {
     @Shadow
     @Final
     private FeatureRenderDispatcher featureRenderDispatcher;
+
+    @Inject(method = {"method_62214"}, at = @At("HEAD"))
+    private void figura$clearDeferredTextTasks(GpuBufferSlice gpuBufferSlice, LevelRenderState levelRenderState, ProfilerFiller profiler, Matrix4f matrix4f, ResourceHandle resourceHandle, ResourceHandle resourceHandle2, boolean bl, ResourceHandle resourceHandle3, ResourceHandle resourceHandle4, CallbackInfo ci) {
+        TextRenderUtils.clearDeferredTextTasks();
+    }
 
     @Inject(method = {"method_62214"}, at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/LevelRenderer;checkPoseStack(Lcom/mojang/blaze3d/vertex/PoseStack;)V", ordinal = 0))
     private void renderLevelFirstPerson(GpuBufferSlice gpuBufferSlice, LevelRenderState levelRenderState, ProfilerFiller profiler, Matrix4f matrix4f, ResourceHandle resourceHandle, ResourceHandle resourceHandle2, boolean bl, ResourceHandle resourceHandle3, ResourceHandle resourceHandle4, CallbackInfo ci, @Local PoseStack stack
@@ -97,6 +107,26 @@ public class LevelRendererMixinFabric {
         bufferSource.endLastBatch(); // do a vanilla hand and render the hand/parts immediately
 
         Avatar.firstPerson = false;
+    }
+
+    @WrapOperation(method = {"method_62214"}, at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/feature/FeatureRenderDispatcher;renderAllFeatures()V"))
+    private void figura$deferFiguraTextTasks(FeatureRenderDispatcher instance, Operation<Void> original) {
+        TextRenderUtils.beginDeferredTextTasks();
+        try {
+            original.call(instance);
+        } finally {
+            TextRenderUtils.endDeferredTextTasks();
+        }
+    }
+
+    @Inject(method = {"method_75413"}, at = @At(value = "FIELD", target = "Lcom/mojang/blaze3d/systems/RenderSystem;outputColorTextureOverride:Lcom/mojang/blaze3d/textures/GpuTextureView;", opcode = Opcodes.PUTSTATIC, ordinal = 1, shift = At.Shift.BEFORE))
+    private void figura$renderDeferredTextTasks(GpuBufferSlice gpuBufferSlice, ResourceHandle resourceHandle, CameraRenderState cameraRenderState, Matrix4f matrix4f, CallbackInfo ci) {
+        if (!TextRenderUtils.hasDeferredTextTasks())
+            return;
+
+        MultiBufferSource.BufferSource bufferSource = this.renderBuffers.bufferSource();
+        TextRenderUtils.renderDeferredTextTasks(bufferSource);
+        bufferSource.endBatch();
     }
 
     @SuppressWarnings("unchecked")

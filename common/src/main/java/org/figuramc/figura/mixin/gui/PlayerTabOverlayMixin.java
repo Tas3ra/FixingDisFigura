@@ -43,7 +43,7 @@ public class PlayerTabOverlayMixin {
         NameplateCustomization custom = avatar == null || avatar.luaRuntime == null ? null : avatar.luaRuntime.nameplate.LIST;
 
         Component replacement = custom != null && custom.getJson() != null && avatar.permissions.get(Permissions.NAMEPLATE_EDIT) == 1 ?
-                TextUtils.replaceInText(custom.getJson().copy(), "\n|\\\\n", " ") : name;
+                TextUtils.collapseLineSeparators(custom.getJson().copy()) : name;
 
         // name
         replacement = TextUtils.replaceInText(replacement, "\\$\\{name\\}", name);

@@ -303,6 +303,7 @@ public class BlockStateAPI {
             LuaTable componentTable = (LuaTable) NbtToLua.convert(NbtToLua.convertToNbt(stack.getComponents()));
             LuaTable entityTable = (LuaTable) NbtToLua.convert(entity.saveWithoutMetadata(WorldAPI.getCurrentWorld().registryAccess()));
             LuaUtils.addLegacyNbtNames(componentTable, entityTable);
+            LuaUtils.addLegacyBlockEntityNbtNames(entityTable);
             return entityTable;
         }
         return null;

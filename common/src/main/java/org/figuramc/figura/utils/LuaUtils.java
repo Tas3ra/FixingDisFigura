@@ -298,32 +298,16 @@ public class LuaUtils {
             dest.set("Enchantments", source.get("minecraft:enchantments"));
         }
         if (!source.get("minecraft:custom_name").equals(LuaValue.NIL)) {
-            LuaTable tab = new LuaTable();
-            if (!dest.get("display").equals(LuaValue.NIL))
-                tab = (LuaTable) dest.get("display");
-            tab.set("Name", source.get("minecraft:custom_name"));
-            dest.set("display", tab);
+            addLegacyDisplayValue(dest, "Name", toLegacyTextComponent(source.get("minecraft:custom_name")));
         }
         if (!source.get("minecraft:lore").equals(LuaValue.NIL)) {
-            LuaTable tab = new LuaTable();
-            if (!dest.get("display").equals(LuaValue.NIL))
-                tab = (LuaTable) dest.get("display");
-            tab.set("Lore", source.get("minecraft:lore"));
-            dest.set("display", tab);
+            addLegacyDisplayValue(dest, "Lore", toLegacyTextComponentList(source.get("minecraft:lore")));
         }
         if (!source.get("minecraft:dyed_color").equals(LuaValue.NIL)) {
-            LuaTable tab = new LuaTable();
-            if (!dest.get("display").equals(LuaValue.NIL))
-                tab = (LuaTable) dest.get("display");
-            tab.set("color", source.get("minecraft:dyed_color"));
-            dest.set("display", tab);
+            addLegacyDisplayValue(dest, "color", source.get("minecraft:dyed_color"));
         }
         if (!source.get("minecraft:map_color").equals(LuaValue.NIL)) {
-            LuaTable tab = new LuaTable();
-            if (!dest.get("display").equals(LuaValue.NIL))
-                tab = (LuaTable) dest.get("display");
-            tab.set("MapColor", source.get("minecraft:map_color"));
-            dest.set("display", tab);
+            addLegacyDisplayValue(dest, "MapColor", source.get("minecraft:map_color"));
         }
         if (!source.get("minecraft:stored_enchantments").equals(LuaValue.NIL)) {
             dest.set("StoredEnchantments", source.get("minecraft:stored_enchantments"));
@@ -358,36 +342,107 @@ public class LuaUtils {
             dest.set("recipes", source.get("minecraft:recipes"));
         }
         if (!source.get("minecraft:profile").equals(LuaValue.NIL)) {
-            LuaTable tab = new LuaTable();
-            if(!source.get("minecraft:profile").get("id").equals(LuaValue.NIL)) {
-                tab.set("Id", source.get("minecraft:profile").get("id"));
-            }
-            if (!source.get("minecraft:profile").get("name").equals(LuaValue.NIL)) {
-                tab.set("Name", source.get("minecraft:profile").get("name"));
-            }
-            if (!source.get("minecraft:profile").get("properties").equals(LuaValue.NIL)) {
-                LuaTable properties = ((LuaTable)source.get("minecraft:profile").get("properties"));
-                LuaTable property = new LuaTable();
-                LuaTable textures = new LuaTable();
-                for (LuaValue key : properties.keys()) {
-                    LuaTable current = (LuaTable) properties.get(key);
-                    LuaTable texture = new LuaTable();
-                    if (!current.get("value").equals(LuaValue.NIL)) {
-                        texture.set("Value", current.get("value"));
-                    }
-                    if (!current.get("signature").equals(LuaValue.NIL)) {
-                        texture.set("Signature", current.get("signature"));
-                    }
-                    if (!current.get("name").equals(LuaValue.NIL)) {
-                        texture.set("Name", current.get("name"));
-                    }
-                    textures.set(key, texture);
-                }
-                property.set("textures", textures);
-                tab.set("Properties", property);
-            }
-            dest.set("SkullOwner", tab);
+            dest.set("SkullOwner", toLegacyProfile(source.get("minecraft:profile")));
         }
+    }
+
+    public static void addLegacyBlockEntityNbtNames(LuaTable table) {
+        if (table == null)
+            return;
+
+        LuaValue components = table.get("components");
+        if (components instanceof LuaTable componentTable) {
+            addLegacyNbtNames(componentTable, table);
+        }
+
+        LuaValue customName = table.get("custom_name");
+        if (!customName.equals(LuaValue.NIL)) {
+            addLegacyDisplayValue(table, "Name", toLegacyTextComponent(customName));
+        }
+
+        LuaValue profile = table.get("profile");
+        if (!profile.equals(LuaValue.NIL) && table.get("SkullOwner").equals(LuaValue.NIL)) {
+            table.set("SkullOwner", toLegacyProfile(profile));
+        }
+    }
+
+    private static void addLegacyDisplayValue(LuaTable dest, String key, LuaValue value) {
+        LuaTable display = new LuaTable();
+        if (dest.get("display") instanceof LuaTable currentDisplay) {
+            display = currentDisplay;
+        }
+        display.set(key, value);
+        dest.set("display", display);
+    }
+
+    private static LuaValue toLegacyTextComponent(LuaValue value) {
+        if (value == null || value.equals(LuaValue.NIL))
+            return value;
+
+        if (value instanceof LuaString string)
+            return LuaValue.valueOf(toLegacyTextComponentString(string.checkjstring()));
+
+        JsonElement json = asJsonValue(value);
+        return json == null ? LuaValue.valueOf(toLegacyTextComponentString(value.tojstring())) : LuaValue.valueOf(json.toString());
+    }
+
+    private static String toLegacyTextComponentString(String text) {
+        try {
+            JsonElement json = JsonParser.parseString(text);
+            if (json.isJsonObject() || json.isJsonArray() || (json.isJsonPrimitive() && json.getAsJsonPrimitive().isString()))
+                return json.toString();
+        } catch (JsonSyntaxException ignored) {
+        }
+
+        return new JsonPrimitive(text).toString();
+    }
+
+    private static LuaValue toLegacyTextComponentList(LuaValue value) {
+        if (!(value instanceof LuaTable table))
+            return toLegacyTextComponent(value);
+
+        LuaTable legacyList = new LuaTable();
+        for (LuaValue key : table.keys()) {
+            legacyList.set(key, toLegacyTextComponent(table.get(key)));
+        }
+        return legacyList;
+    }
+
+    private static LuaValue toLegacyProfile(LuaValue profileValue) {
+        if (!(profileValue instanceof LuaTable profile))
+            return profileValue;
+
+        LuaTable tab = new LuaTable();
+        if (!profile.get("id").equals(LuaValue.NIL)) {
+            tab.set("Id", profile.get("id"));
+        }
+        if (!profile.get("name").equals(LuaValue.NIL)) {
+            tab.set("Name", profile.get("name"));
+        }
+        if (profile.get("properties") instanceof LuaTable properties) {
+            LuaTable property = new LuaTable();
+            LuaTable textures = new LuaTable();
+            for (LuaValue key : properties.keys()) {
+                LuaValue value = properties.get(key);
+                if (!(value instanceof LuaTable current))
+                    continue;
+
+                LuaTable texture = new LuaTable();
+                if (!current.get("value").equals(LuaValue.NIL)) {
+                    texture.set("Value", current.get("value"));
+                }
+                if (!current.get("signature").equals(LuaValue.NIL)) {
+                    texture.set("Signature", current.get("signature"));
+                }
+                if (!current.get("name").equals(LuaValue.NIL)) {
+                    texture.set("Name", current.get("name"));
+                }
+                textures.set(key, texture);
+            }
+            property.set("textures", textures);
+            tab.set("Properties", property);
+        }
+        return tab;
     }
 
     public static ItemStack parseItemStack(String methodName, Object item) {
