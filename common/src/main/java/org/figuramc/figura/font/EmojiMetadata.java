@@ -13,9 +13,9 @@ public class EmojiMetadata {
     private int curFrame;
 
     public EmojiMetadata(int frames, int frameTime, int width) {
-        this.frames = frames;
-        this.frameTime = frameTime;
-        this.width = width;
+        this.frames = Math.max(1, frames);
+        this.frameTime = Math.max(1, frameTime);
+        this.width = Math.max(1, width);
     }
 
     public EmojiMetadata(JsonObject entry) {

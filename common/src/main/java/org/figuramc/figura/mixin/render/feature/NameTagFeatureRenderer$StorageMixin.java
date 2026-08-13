@@ -144,32 +144,12 @@ public class NameTagFeatureRenderer$StorageMixin implements NameTagFeatureRender
     private <E> boolean drawWithColor(List<E> instance, E e, Operation<Boolean> original) {
         SubmitNodeStorage.NameTagSubmit submit = (SubmitNodeStorage.NameTagSubmit) e;
 
-        Font font = Minecraft.getInstance().font;
-
-        if (figura$enabled && figura$avatar != null && figura$hasCustomNameplate) {
+        if (figura$shouldCustomizeNameplate()) {
             int light = figura$custom.light != null ? figura$custom.light : submit.lightCoords();
             int backgroundColor = figura$custom.background != null ? figura$custom.background : submit.backgroundColor();
-            boolean deadmau = submit.text().getString().equals("deadmau5");
+            int color = figura$custom.outline ? figura$transparentColor(submit.color()) : submit.color();
 
-            // This renders the translucent part of the nametag you see when shifting, and the background
-            if (figura$isRenderingName) {
-                // If the player's name is being rendered, render by lines otherwise just render whatever component is being passed. Applies for the rest of the loops below
-                for (int i = 0; i < figura$textList.size(); i++) {
-                    Component text1 = figura$textList.get(i);
-
-                    if (text1.getString().isEmpty())
-                        continue;
-
-                    int line = i - figura$textList.size() + 1;
-                    float x = -font.width(text1) / 2f;
-                    float y =  (deadmau ? -10f : 0f) + (font.lineHeight + 1) * line;
-
-                    original.call(instance, new SubmitNodeStorage.NameTagSubmit(submit.pose(), x, y, text1, light, submit.color(), backgroundColor, submit.distanceToCameraSq()));
-                }
-                return true;
-            }  else {
-                return original.call(instance, new SubmitNodeStorage.NameTagSubmit(submit.pose(), submit.x(), submit.y(), submit.text(), light, submit.color(), backgroundColor, submit.distanceToCameraSq()));
-            }
+            return figura$addNameplateSubmits(instance, original, submit, submit.pose(), color, backgroundColor, light);
         }
         return original.call(instance, e);
     }
@@ -182,51 +162,101 @@ public class NameTagFeatureRenderer$StorageMixin implements NameTagFeatureRender
     private <E> boolean drawWithOutline(List<E> instance, E e, Operation<Boolean> original, @Share("textMatrix") LocalRef<Matrix4f> textMatrix) {
         SubmitNodeStorage.NameTagSubmit submit = (SubmitNodeStorage.NameTagSubmit) e;
 
-        Font font = Minecraft.getInstance().font;
-
         Matrix4f pose = submit.pose();
         int color = submit.color();
-        boolean deadmau = submit.text().getString().equals("deadmau5");
+        int light = figura$custom != null && figura$custom.light != null ? figura$custom.light : submit.lightCoords();
         Matrix4f shadowMatrix = textMatrix.get() != null ? textMatrix.get() : pose;
-        if (figura$enabled && figura$avatar != null && figura$hasCustomNameplate && figura$custom.outline) {
-            // This renders the opaque text with an outline if the player has that enabled.
-            int outlineColor = figura$custom.outlineColor != null ? figura$custom.outlineColor : 0x202020;
 
-            if (figura$isRenderingName) {
-                for (int i = 0; i < figura$textList.size(); i++) {
-                    Component text1 = figura$textList.get(i);
-
-                    if (text1.getString().isEmpty())
-                        continue;
-
-                    int line = i - figura$textList.size() + 1;
-                    float x = -font.width(text1) / 2f;
-                    float y = (deadmau ? -10f : 0f) + (font.lineHeight + 1) * line;
-                    // yes i am using the bg color field to store the outline color, sue me
-                    figura$outlineSubmits.add(new SubmitNodeStorage.NameTagSubmit(pose, x, y, text1,  submit.lightCoords(), color, outlineColor, submit.distanceToCameraSq()));
-                }
-            } else {
-                figura$outlineSubmits.add(new SubmitNodeStorage.NameTagSubmit(pose, submit.x(), submit.y(), submit.text(),  submit.lightCoords(), color, outlineColor, submit.distanceToCameraSq()));
+        if (figura$shouldCustomizeNameplate()) {
+            if (figura$custom.outline) {
+                figura$addOutlineSubmits(submit, pose, color, light);
+                return figura$addNameplateSubmits(instance, original, submit, shadowMatrix, figura$transparentColor(color), submit.backgroundColor(), light);
             }
-            return original.call(instance, new SubmitNodeStorage.NameTagSubmit(shadowMatrix, submit.x(), submit.y(), Component.empty(),  submit.lightCoords(), color, submit.backgroundColor(), submit.distanceToCameraSq()));
+
+            return figura$addNameplateSubmits(instance, original, submit, shadowMatrix, color, submit.backgroundColor(), light);
+        }
+
+        return original.call(instance, new SubmitNodeStorage.NameTagSubmit(shadowMatrix, submit.x(), submit.y(), submit.text(),  submit.lightCoords(), color, submit.backgroundColor(), submit.distanceToCameraSq()));
+    }
+
+    @WrapOperation(method = "add",
+            at = @At(value = "INVOKE", target =
+                    "Ljava/util/List;add(Ljava/lang/Object;)Z"
+                    , ordinal = 2))
+    private <E> boolean drawDiscreteWithOutline(List<E> instance, E e, Operation<Boolean> original, @Share("textMatrix") LocalRef<Matrix4f> textMatrix) {
+        SubmitNodeStorage.NameTagSubmit submit = (SubmitNodeStorage.NameTagSubmit) e;
+
+        if (!figura$shouldCustomizeNameplate())
+            return original.call(instance, e);
+
+        Matrix4f pose = submit.pose();
+        Matrix4f shadowMatrix = textMatrix.get() != null ? textMatrix.get() : pose;
+        int color = submit.color();
+        int light = figura$custom.light != null ? figura$custom.light : submit.lightCoords();
+        int backgroundColor = figura$custom.background != null ? figura$custom.background : submit.backgroundColor();
+
+        if (figura$custom.outline) {
+            figura$addOutlineSubmits(submit, pose, color, light);
+            return figura$addNameplateSubmits(instance, original, submit, shadowMatrix, figura$transparentColor(color), backgroundColor, light);
+        }
+
+        return figura$addNameplateSubmits(instance, original, submit, shadowMatrix, color, backgroundColor, light);
+    }
+
+    @Unique
+    private boolean figura$shouldCustomizeNameplate() {
+        return figura$enabled && figura$avatar != null && figura$hasCustomNameplate;
+    }
+
+    @Unique
+    private int figura$transparentColor(int color) {
+        return color & 0x00FFFFFF;
+    }
+
+    @Unique
+    @SuppressWarnings("unchecked")
+    private <E> boolean figura$addNameplateSubmits(List<E> instance, Operation<Boolean> original, SubmitNodeStorage.NameTagSubmit submit,
+                                                   Matrix4f pose, int color, int backgroundColor, int light) {
+        if (figura$isRenderingName && figura$textList != null) {
+            Font font = Minecraft.getInstance().font;
+            for (int i = 0; i < figura$textList.size(); i++) {
+                Component text = figura$textList.get(i);
+
+                if (text.getString().isEmpty())
+                    continue;
+
+                int line = i - figura$textList.size() + 1;
+                float x = -font.width(text) / 2f;
+                float y = submit.y() + (font.lineHeight + 1) * line;
+
+                original.call(instance, (E) new SubmitNodeStorage.NameTagSubmit(pose, x, y, text, light, color, backgroundColor, submit.distanceToCameraSq()));
+            }
+            return true;
+        }
+
+        return original.call(instance, (E) new SubmitNodeStorage.NameTagSubmit(pose, submit.x(), submit.y(), submit.text(), light, color, backgroundColor, submit.distanceToCameraSq()));
+    }
+
+    @Unique
+    private void figura$addOutlineSubmits(SubmitNodeStorage.NameTagSubmit submit, Matrix4f pose, int color, int light) {
+        int outlineColor = figura$custom.outlineColor != null ? figura$custom.outlineColor : 0x202020;
+
+        if (figura$isRenderingName && figura$textList != null) {
+            Font font = Minecraft.getInstance().font;
+            for (int i = 0; i < figura$textList.size(); i++) {
+                Component text = figura$textList.get(i);
+
+                if (text.getString().isEmpty())
+                    continue;
+
+                int line = i - figura$textList.size() + 1;
+                float x = -font.width(text) / 2f;
+                float y = submit.y() + (font.lineHeight + 1) * line;
+
+                figura$outlineSubmits.add(new SubmitNodeStorage.NameTagSubmit(pose, x, y, text, light, color, outlineColor, submit.distanceToCameraSq()));
+            }
         } else {
-            if (figura$enabled && figura$avatar != null && figura$hasCustomNameplate && figura$isRenderingName) {
-                // This renders the opaque part of the nametag, that is text
-                for (int i = 0; i < figura$textList.size(); i++) {
-                    Component text1 = figura$textList.get(i);
-
-                    if (text1.getString().isEmpty())
-                        continue;
-
-                    int line = i - figura$textList.size() + 1;
-                    float x = -font.width(text1) / 2f;
-                    float y = (deadmau ? -10f : 0f) + (font.lineHeight + 1) * line;
-                    original.call(instance, new SubmitNodeStorage.NameTagSubmit(shadowMatrix, x, y, text1, submit.lightCoords(), color, submit.backgroundColor(), submit.distanceToCameraSq()));
-                }
-                return true;
-            } else {
-                return original.call(instance, new SubmitNodeStorage.NameTagSubmit(shadowMatrix, submit.x(), submit.y(), submit.text(),  submit.lightCoords(), color, submit.backgroundColor(), submit.distanceToCameraSq()));
-            }
+            figura$outlineSubmits.add(new SubmitNodeStorage.NameTagSubmit(pose, submit.x(), submit.y(), submit.text(), light, color, outlineColor, submit.distanceToCameraSq()));
         }
     }
 

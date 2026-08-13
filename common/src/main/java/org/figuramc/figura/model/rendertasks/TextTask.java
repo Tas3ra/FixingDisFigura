@@ -4,9 +4,11 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GlyphSource;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.FormattedCharSequence;
 import org.figuramc.figura.FiguraMod;
 import org.figuramc.figura.avatar.Avatar;
 import org.figuramc.figura.avatar.Badges;
@@ -18,6 +20,7 @@ import org.figuramc.figura.lua.docs.LuaMethodOverload;
 import org.figuramc.figura.lua.docs.LuaTypeDoc;
 import org.figuramc.figura.math.vector.FiguraVec3;
 import org.figuramc.figura.math.vector.FiguraVec4;
+import org.figuramc.figura.mixin.font.FontAccessor;
 import org.figuramc.figura.model.FiguraModelPart;
 import org.figuramc.figura.utils.ColorUtils;
 import org.figuramc.figura.utils.LuaUtils;
@@ -86,9 +89,12 @@ public class TextTask extends RenderTask {
             int x = -alignment.apply(font, text);
 
             if (outline) {
-                font.drawInBatch8xOutline(text.getVisualOrderText(), x, j, op, out, matrix, buffer, l);
-                if (seeThrough)
-                    figura$drawSeeThroughText(font, text, x, j, op, shadow, matrix, buffer, l);
+                if (seeThrough) {
+                    figura$drawSeeThroughOutlinedText(font, text.getVisualOrderText(), x, j, op, out, matrix, buffer, l);
+                    font.drawInBatch8xOutline(text.getVisualOrderText(), x, j, op, out, matrix, buffer, l);
+                } else {
+                    font.drawInBatch8xOutline(text.getVisualOrderText(), x, j, op, out, matrix, buffer, l);
+                }
             } else {
                 if (seeThrough)
                     figura$drawSeeThroughText(font, text, x, j, op, shadow, matrix, buffer, l);
@@ -103,6 +109,35 @@ public class TextTask extends RenderTask {
         if (shadow)
             font.drawInBatch(text, x + 1f, y + 1f, figura$shadowColor(color), false, matrix, buffer, Font.DisplayMode.POLYGON_OFFSET, 0, light);
 
+        font.drawInBatch(text, x, y, color, false, matrix, buffer, Font.DisplayMode.SEE_THROUGH, 0, light);
+    }
+
+    private static void figura$drawSeeThroughOutlinedText(Font font, FormattedCharSequence text, float x, float y, int color,
+                                                         int outlineColor, Matrix4f matrix, MultiBufferSource buffer, int light) {
+        Font.PreparedTextBuilder outlineBuilder = font.new PreparedTextBuilder(0, 0, outlineColor, false, false);
+
+        for (int xOffset = -1; xOffset <= 1; xOffset++) {
+            for (int yOffset = -1; yOffset <= 1; yOffset++) {
+                if (xOffset == 0 && yOffset == 0)
+                    continue;
+
+                float[] cursor = new float[] {x};
+                int outlineX = xOffset;
+                int outlineY = yOffset;
+                int rgbOutline = outlineColor & 0x00FFFFFF;
+                text.accept((index, style, codePoint) -> {
+                    boolean bold = style.isBold();
+                    GlyphSource glyphSource = ((FontAccessor) font).figura$getFontSet(style.getFont());
+                    var glyphInfo = glyphSource.getGlyph(codePoint).info();
+                    outlineBuilder.x = cursor[0] + outlineX * glyphInfo.getShadowOffset();
+                    outlineBuilder.y = y + outlineY * glyphInfo.getShadowOffset();
+                    cursor[0] += glyphInfo.getAdvance(bold);
+                    return outlineBuilder.accept(index, style.withColor(rgbOutline), codePoint);
+                });
+            }
+        }
+
+        outlineBuilder.visit(Font.GlyphVisitor.forMultiBufferSource(buffer, matrix, Font.DisplayMode.SEE_THROUGH, light));
         font.drawInBatch(text, x, y, color, false, matrix, buffer, Font.DisplayMode.SEE_THROUGH, 0, light);
     }
 

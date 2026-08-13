@@ -2,7 +2,6 @@ package org.figuramc.figura.mixin.font;
 
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.gui.font.glyphs.BakedSheetGlyph;
-import org.figuramc.figura.compat.ImmediatelyFastCompat;
 import org.figuramc.figura.ducks.BakedGlyphAccessor;
 import org.figuramc.figura.font.EmojiContainer;
 import org.figuramc.figura.font.EmojiMetadata;
@@ -58,14 +57,16 @@ public abstract class BakedSheetGlyphMixin implements BakedGlyphAccessor {
         float n = italic ? 1.0f - 0.25f * j : 0f;
         float q = bold ? 0.1F : 0.0F;
 
-        final float singleWidth = 8f / ImmediatelyFastCompat.getFontWidthIMF();
-        float shift = singleWidth * figura$metadata.getCurrentFrame();
+        int frames = Math.max(1, figura$metadata.frames);
+        int frame = Math.floorMod(figura$metadata.getCurrentFrame(), frames);
+        float frameWidth = (this.u1 - this.u0) / frames;
+        float u = this.u0 + frameWidth * frame;
+        float nextU = u + frameWidth;
 
-        float u = u0 + shift;
         vertexConsumer.addVertex(matrix, x + m - q, k - q, z).setColor(color).setUv(u, this.v0).setLight(light);
         vertexConsumer.addVertex(matrix, x + n - q, l + q, z).setColor(color).setUv(u, this.v1).setLight(light);
-        vertexConsumer.addVertex(matrix, x + figura$metadata.width + n + q, l + q, z).setColor(color).setUv(u + singleWidth, this.v1).setLight(light);
-        vertexConsumer.addVertex(matrix, x + figura$metadata.width + m + q, k - q, z).setColor(color).setUv(u + singleWidth, this.v0).setLight(light);
+        vertexConsumer.addVertex(matrix, x + figura$metadata.width + n + q, l + q, z).setColor(color).setUv(nextU, this.v1).setLight(light);
+        vertexConsumer.addVertex(matrix, x + figura$metadata.width + m + q, k - q, z).setColor(color).setUv(nextU, this.v0).setLight(light);
         ci.cancel();
     }
 }
