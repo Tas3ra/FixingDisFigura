@@ -163,11 +163,15 @@ public class RenderUtils {
         Minecraft client = Minecraft.getInstance();
         FeatureRenderDispatcher featureRenderDispatcher = client.gameRenderer.getFeatureRenderDispatcher();
         SubmitNodeStorage submitNodeStorage = featureRenderDispatcher.getSubmitNodeStorage();
-        if (entity != null)
-            client.getItemModelResolver().updateForLiving(itemStackRenderState, item, displayMode, entity);
-        else
-            client.getItemModelResolver().updateForTopItem(itemStackRenderState, item, displayMode, client.level, null, 0);
-        itemStackRenderState.submit(poseStack, submitNodeStorage, newLight, newOverlay, 0);
+        try {
+            if (entity != null)
+                client.getItemModelResolver().updateForLiving(itemStackRenderState, item, displayMode, entity);
+            else
+                client.getItemModelResolver().updateForTopItem(itemStackRenderState, item, displayMode, client.level, null, 0);
+            itemStackRenderState.submit(poseStack, submitNodeStorage, newLight, newOverlay, 0);
+        } finally {
+            itemStackRenderState.clear();
+        }
     }
 
 

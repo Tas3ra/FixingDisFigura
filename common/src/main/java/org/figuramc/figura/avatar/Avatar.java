@@ -52,7 +52,6 @@ import org.figuramc.figura.lua.api.ping.PingFunction;
 import org.figuramc.figura.lua.api.sound.SoundAPI;
 import org.figuramc.figura.lua.api.world.BlockStateAPI;
 import org.figuramc.figura.lua.api.world.ItemStackAPI;
-import org.figuramc.figura.lua.api.world.WorldAPI;
 import org.figuramc.figura.math.matrix.FiguraMat3;
 import org.figuramc.figura.math.matrix.FiguraMat4;
 import org.figuramc.figura.math.vector.FiguraVec3;
@@ -179,7 +178,15 @@ public class Avatar {
     }
 
     public Avatar(EntityRenderState entity) {
-        this(AvatarManager.ENTITY_CACHE.computeIfAbsent((int)(entity instanceof AvatarRenderState playerRenderState ? playerRenderState.id : ((FiguraEntityRenderStateExtension)entity).figura$getEntityId()), (id2) -> WorldAPI.getCurrentWorld().getEntity(id2)));
+        this(figura$requireCachedEntity(entity));
+    }
+
+    private static Entity figura$requireCachedEntity(EntityRenderState entity) {
+        Integer id = entity instanceof AvatarRenderState playerRenderState ? playerRenderState.id : ((FiguraEntityRenderStateExtension)entity).figura$getEntityId();
+        Entity resolved = id == null ? null : AvatarManager.getCachedEntity(id);
+        if (resolved == null)
+            throw new IllegalArgumentException("Cannot create an avatar for a missing entity render state");
+        return resolved;
     }
 
     public void load(CompoundTag nbt) {
@@ -1016,8 +1023,10 @@ public class Avatar {
      * also closes and stops this avatar sounds
      */
     public void clean() {
-        if (renderer != null)
+        if (renderer != null) {
             renderer.invalidate();
+            renderer = null;
+        }
 
         clearSounds();
         clearParticles();
@@ -1025,6 +1034,14 @@ public class Avatar {
         closeStreams();
 
         events.clear();
+        animations.clear();
+        resources.clear();
+        badgeToColor.clear();
+        noPermissions.clear();
+        permissionsToTick.clear();
+        customInstructions.clear();
+        nbt = null;
+        luaRuntime = null;
     }
 
     public void clearSounds() {
@@ -1033,6 +1050,7 @@ public class Avatar {
             for (SoundBuffer value : customSounds.values())
                 value.releaseAlBuffer();
         }
+        customSounds.clear();
     }
 
     public void closeBuffers() {

@@ -23,6 +23,7 @@ public class ScreenEffectRendererMixin {
 
     @Inject(method = "renderFire", at = @At("HEAD"), cancellable = true)
     private static void renderFire(PoseStack poseStack, MultiBufferSource multiBufferSource, TextureAtlasSprite textureAtlasSprite, CallbackInfo ci) {
+        avatar = null;
         Avatar a = AvatarManager.getAvatar(Minecraft.getInstance().getCameraEntity());
         if (RenderUtils.vanillaModelAndScript(a)) {
             if (!a.luaRuntime.renderer.renderFire) {
@@ -38,5 +39,10 @@ public class ScreenEffectRendererMixin {
         TextureAtlasSprite s = RenderUtils.secondFireLayer(avatar);
         avatar = null;
         return s != null ? s : sprite;
+    }
+
+    @Inject(method = "renderFire", at = @At("RETURN"))
+    private static void clearFireAvatar(PoseStack poseStack, MultiBufferSource multiBufferSource, TextureAtlasSprite textureAtlasSprite, CallbackInfo ci) {
+        avatar = null;
     }
 }

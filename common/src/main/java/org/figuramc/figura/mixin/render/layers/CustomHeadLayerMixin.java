@@ -65,17 +65,21 @@ public abstract class CustomHeadLayerMixin<S extends LivingEntityRenderState, M 
     @Inject(at = @At("HEAD"), method = "submit(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;ILnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;FF)V", cancellable = true)
     private void render(PoseStack poseStack, SubmitNodeCollector submitNodeCollector, int i, S entityState, float f, float g, CallbackInfo ci) {
         ItemStackRenderState itemStackState = entityState.headItem;
+        avatar = null;
+        ItemStack itemStack = ((FiguraItemStackRenderStateExtension)itemStackState).figura$getItemStack();
+
         // check for armor attributes :3
-        if (((FiguraItemStackRenderStateExtension)itemStackState).figura$getItemStack() == null || (((FiguraItemStackRenderStateExtension)itemStackState).figura$getItemStack().getItem() instanceof Item armorItem && armorItem.components().has(DataComponents.EQUIPPABLE) && armorItem.components().get(DataComponents.EQUIPPABLE).slot() == EquipmentSlot.HEAD && armorItem.components().has(DataComponents.ATTRIBUTE_MODIFIERS) && armorItem.components().get(DataComponents.ATTRIBUTE_MODIFIERS).modifiers().stream().anyMatch(attribute -> attribute.attribute() == Attributes.ARMOR)))
+        if (itemStack == null || (itemStack.getItem() instanceof Item armorItem && armorItem.components().has(DataComponents.EQUIPPABLE) && armorItem.components().get(DataComponents.EQUIPPABLE).slot() == EquipmentSlot.HEAD && armorItem.components().has(DataComponents.ATTRIBUTE_MODIFIERS) && armorItem.components().get(DataComponents.ATTRIBUTE_MODIFIERS).modifiers().stream().anyMatch(attribute -> attribute.attribute() == Attributes.ARMOR)))
             return;
 
-        ItemStack itemStack = ((FiguraItemStackRenderStateExtension)itemStackState).figura$getItemStack();
         avatar = AvatarManager.getAvatar(entityState);
-        if (!RenderUtils.vanillaModel(avatar))
+        Avatar localAvatar = avatar;
+        if (!RenderUtils.vanillaModel(localAvatar))
             return;
 
         // script hide
-        if (avatar.luaRuntime != null && !avatar.luaRuntime.vanilla_model.HELMET_ITEM.checkVisible()) {
+        if (localAvatar.luaRuntime != null && !localAvatar.luaRuntime.vanilla_model.HELMET_ITEM.checkVisible()) {
+            avatar = null;
             ci.cancel();
             return;
         }
@@ -85,34 +89,39 @@ public abstract class CustomHeadLayerMixin<S extends LivingEntityRenderState, M 
             SkullBlock.Type type = entityState.wornHeadType;
             SkullModelBase skullModelBase = this.skullModels.apply(type);
             RenderType renderType = resolveSkullRenderType(entityState, type);
+            if (skullModelBase == null || renderType == null)
+                return;
 
             // render!!
-            if (avatar.pivotPartRender(ParentType.HelmetItemPivot, stack -> {
+            if (localAvatar.pivotPartRender(ParentType.HelmetItemPivot, stack -> {
                 float s = 19f;
                 stack.scale(s, s, s);
                 stack.translate(-0.5d, 0d, -0.5d);
 
                 // set item context
+                SkullBlockRendererAccessor.clear();
                 SkullBlockRendererAccessor.setItem(itemStack);
                 Integer id = ((FiguraEntityRenderStateExtension)entityState).figura$getEntityId();
-                if (id != null)
+                if (id != null && Minecraft.getInstance().level != null)
                     SkullBlockRendererAccessor.setEntity(Minecraft.getInstance().level.getEntity(id));
                 SkullBlockRendererAccessor.setRenderMode(SkullBlockRendererAccessor.SkullRenderMode.HEAD);
                 SkullBlockRenderer.submitSkull(null, 0f, f, stack, submitNodeCollector, i, skullModelBase,
                         renderType, entityState.outlineColor, null);
             })) {
+                avatar = null;
                 ci.cancel();
             }
-        } else if (avatar.pivotPartRender(ParentType.HelmetItemPivot, stack -> {
+        } else if (localAvatar.pivotPartRender(ParentType.HelmetItemPivot, stack -> {
             float s = 10f;
             stack.translate(0d, 4d, 0d);
             stack.scale(s, s, s);
             ItemTransform transform = ((FiguraItemStackRenderStateExtension) itemStackState).figura$getItemTransform();
 
-            boolean shouldSubmitVanilla = avatar.itemRenderEvent(ItemStackAPI.verify(((FiguraItemStackRenderStateExtension)itemStackState).figura$getItemStack()), ((FiguraItemStackRenderStateExtension)itemStackState).figura$getDisplayContext().name(), FiguraVec3.fromVec3f(transform.translation()), FiguraVec3.of(transform.rotation().z(), transform.rotation().y(), transform.rotation().x()), FiguraVec3.fromVec3f(transform.scale()), ((FiguraItemStackRenderStateExtension) itemStackState).figura$isLeftHanded(), stack, submitNodeCollector, entityState.lightCoords, OverlayTexture.NO_OVERLAY);
+            boolean shouldSubmitVanilla = localAvatar.itemRenderEvent(ItemStackAPI.verify(itemStack), ((FiguraItemStackRenderStateExtension)itemStackState).figura$getDisplayContext().name(), FiguraVec3.fromVec3f(transform.translation()), FiguraVec3.of(transform.rotation().z(), transform.rotation().y(), transform.rotation().x()), FiguraVec3.fromVec3f(transform.scale()), ((FiguraItemStackRenderStateExtension) itemStackState).figura$isLeftHanded(), stack, submitNodeCollector, entityState.lightCoords, OverlayTexture.NO_OVERLAY);
             if (shouldSubmitVanilla)
                 entityState.headItem.submit(poseStack, submitNodeCollector, i, OverlayTexture.NO_OVERLAY, entityState.outlineColor);
         })) {
+            avatar = null;
             ci.cancel();
         }
     }
@@ -120,13 +129,15 @@ public abstract class CustomHeadLayerMixin<S extends LivingEntityRenderState, M 
     @WrapOperation(method = "submit(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;ILnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;FF)V", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/item/ItemStackRenderState;submit(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;III)V"))
     private void figuraItemEvent(ItemStackRenderState instance, PoseStack matrices, SubmitNodeCollector submitNodeCollector, int i, int j, int k, Operation<Void> original, @Local(argsOnly = true) S entityState) {
         ItemTransform transform =  ((FiguraItemStackRenderStateExtension) instance).figura$getItemTransform();
-        boolean callOriginal = avatar == null || !avatar.itemRenderEvent(ItemStackAPI.verify(((FiguraItemStackRenderStateExtension)instance).figura$getItemStack()), ((FiguraItemStackRenderStateExtension)instance).figura$getDisplayContext().name(), FiguraVec3.fromVec3f(transform.translation()), FiguraVec3.of(transform.rotation().z(), transform.rotation().y(), transform.rotation().x()), FiguraVec3.fromVec3f(transform.scale()), ((FiguraItemStackRenderStateExtension) instance).figura$isLeftHanded(), matrices, submitNodeCollector, i, j);
+        ItemStack itemStack = ((FiguraItemStackRenderStateExtension)instance).figura$getItemStack();
+        boolean callOriginal = avatar == null || itemStack == null || !avatar.itemRenderEvent(ItemStackAPI.verify(itemStack), ((FiguraItemStackRenderStateExtension)instance).figura$getDisplayContext().name(), FiguraVec3.fromVec3f(transform.translation()), FiguraVec3.of(transform.rotation().z(), transform.rotation().y(), transform.rotation().x()), FiguraVec3.fromVec3f(transform.scale()), ((FiguraItemStackRenderStateExtension) instance).figura$isLeftHanded(), matrices, submitNodeCollector, i, j);
         if (callOriginal)
             original.call(instance, matrices, submitNodeCollector, i, j, k);
     }
 
     @Inject(at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/blockentity/SkullBlockRenderer;submitSkull(Lnet/minecraft/core/Direction;FFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;ILnet/minecraft/client/model/object/skull/SkullModelBase;Lnet/minecraft/client/renderer/rendertype/RenderType;ILnet/minecraft/client/renderer/feature/ModelFeatureRenderer$CrumblingOverlay;)V"), method = "submit(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;ILnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;FF)V")
     private void renderSkull(PoseStack poseStack, SubmitNodeCollector submitNodeCollector, int i, S livingEntityRenderState, float f, float g, CallbackInfo ci) {
+        SkullBlockRendererAccessor.clear();
         ItemStack stack = ((FiguraItemStackRenderStateExtension)livingEntityRenderState.headItem).figura$getItemStack();
         if (stack == null) return;
         SkullBlockRendererAccessor.setItem(stack);
@@ -134,5 +145,10 @@ public abstract class CustomHeadLayerMixin<S extends LivingEntityRenderState, M 
         if (id != null && Minecraft.getInstance().level != null && Minecraft.getInstance().level.getEntity(id) != null)
             SkullBlockRendererAccessor.setEntity(Minecraft.getInstance().level.getEntity(id));
         SkullBlockRendererAccessor.setRenderMode(SkullBlockRendererAccessor.SkullRenderMode.HEAD);
+    }
+
+    @Inject(at = @At("RETURN"), method = "submit(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;ILnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;FF)V")
+    private void clearRenderContext(PoseStack poseStack, SubmitNodeCollector submitNodeCollector, int i, S entityState, float f, float g, CallbackInfo ci) {
+        avatar = null;
     }
 }

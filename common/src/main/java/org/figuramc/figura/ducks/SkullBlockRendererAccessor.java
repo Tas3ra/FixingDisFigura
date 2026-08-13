@@ -33,6 +33,12 @@ public abstract class SkullBlockRendererAccessor {
         return renderMode;
     }
 
+    public static void clear() {
+        stack = null;
+        entity = null;
+        renderMode = SkullRenderMode.OTHER;
+    }
+
     public enum SkullRenderMode {
         HEAD,
         FIRST_PERSON_LEFT_HAND,

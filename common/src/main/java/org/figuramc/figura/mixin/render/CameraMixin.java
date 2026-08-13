@@ -120,12 +120,13 @@ public abstract class CameraMixin {
 
     @Inject(method = "setup", at = @At(value = "RETURN"))
     private void setupPos(Level level, Entity entity, boolean bl, boolean bl2, float f, CallbackInfo ci) {
-        if (RenderUtils.vanillaModelAndScript(avatar)) {
-            FiguraVec3 pos = avatar.luaRuntime.renderer.cameraPos;
+        Avatar localAvatar = avatar;
+        avatar = null;
+
+        if (RenderUtils.vanillaModelAndScript(localAvatar)) {
+            FiguraVec3 pos = localAvatar.luaRuntime.renderer.cameraPos;
             if (pos != null && pos.notNaN())
                 move((float) -pos.z, (float) pos.y, (float) -pos.x);
-
-            avatar = null;
         }
     }
 

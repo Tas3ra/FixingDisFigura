@@ -14,6 +14,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.component.ResolvableProfile;
 import org.figuramc.figura.FiguraMod;
 import org.figuramc.figura.avatar.local.LocalAvatarLoader;
 import org.figuramc.figura.backend2.NetworkStuff;
@@ -22,7 +23,6 @@ import org.figuramc.figura.gui.FiguraToast;
 import org.figuramc.figura.gui.widgets.lists.AvatarList;
 import org.figuramc.figura.lua.api.particle.ParticleAPI;
 import org.figuramc.figura.lua.api.sound.SoundAPI;
-import org.figuramc.figura.lua.api.world.WorldAPI;
 import org.figuramc.figura.utils.EntityUtils;
 import org.figuramc.figura.utils.FiguraClientCommandSource;
 import org.figuramc.figura.utils.FiguraResourceListener;
@@ -68,6 +68,8 @@ public class AvatarManager {
         if (panic)
             return;
 
+        Minecraft client = Minecraft.getInstance();
+
         // tick the avatars
         for (UserData user : LOADED_USERS.values()) {
             Avatar avatar = user.getMainAvatar();
@@ -82,21 +84,28 @@ public class AvatarManager {
         if (LOADED_CEM.isEmpty())
             return;
 
+        if (client.level == null) {
+            clearCEMAvatars();
+            ENTITY_CACHE.clear();
+            return;
+        }
+
         // unload entities
         IntSet toBeRemoved = new IntOpenHashSet();
 
         for (int entityId : LOADED_CEM.keySet()) {
-            Entity entity = Minecraft.getInstance().level.getEntity(entityId);
-            if (entity != null && entity.isRemoved()) {
+            Entity entity = client.level.getEntity(entityId);
+            if (entity == null || entity.isRemoved()) {
                 toBeRemoved.add(entityId);
-                ENTITY_CACHE.remove(entityId);
-            } else if (entity == null) {
                 ENTITY_CACHE.remove(entityId);
             }
         }
 
-        for (int entity : toBeRemoved)
-            LOADED_CEM.remove(entity);
+        for (int entity : toBeRemoved) {
+            Avatar removed = LOADED_CEM.remove(entity);
+            if (removed != null)
+                removed.clean();
+        }
 
         // tick entities
         for (Avatar avatar : LOADED_CEM.values()) {
@@ -138,13 +147,40 @@ public class AvatarManager {
 
     // player will also attempt to load from network, if possible
     public static Avatar getAvatarForPlayer(UUID player) {
-        if (panic || Minecraft.getInstance().level == null)
+        if (player == null || panic || Minecraft.getInstance().level == null)
             return null;
 
         fetchBackend(player);
 
         UserData user = LOADED_USERS.get(player);
         return user == null ? null : user.getMainAvatar();
+    }
+
+    public static Avatar getAvatarForProfile(ResolvableProfile profile) {
+        if (profile == null || profile.partialProfile() == null || profile.partialProfile().id() == null)
+            return null;
+
+        return getAvatarForPlayer(profile.partialProfile().id());
+    }
+
+    public static Entity getCachedEntity(int entityId) {
+        if (Minecraft.getInstance().level == null) {
+            ENTITY_CACHE.remove(entityId);
+            return null;
+        }
+
+        Entity cached = ENTITY_CACHE.get(entityId);
+        if (cached != null && !cached.isRemoved())
+            return cached;
+
+        Entity entity = Minecraft.getInstance().level.getEntity(entityId);
+        if (entity == null || entity.isRemoved()) {
+            ENTITY_CACHE.remove(entityId);
+            return null;
+        }
+
+        ENTITY_CACHE.put(entityId, entity);
+        return entity;
     }
 
     private static Avatar getAvatarForEntity(Entity entity) {
@@ -224,7 +260,7 @@ public class AvatarManager {
     public static void clearAvatars(UUID id) {
         FETCHED_USERS.remove(id);
 
-        UserData user = LOADED_USERS.get(id);
+        UserData user = LOADED_USERS.remove(id);
         if (user != null) user.clear();
 
         NetworkStuff.clear(id);
@@ -235,6 +271,7 @@ public class AvatarManager {
         for (Avatar avatar : LOADED_CEM.values())
             avatar.clean();
         LOADED_CEM.clear();
+        ENTITY_CACHE.clear();
     }
 
     // clears ALL loaded avatars, including local
@@ -288,21 +325,27 @@ public class AvatarManager {
 
     // load CEM avatar
     public static Avatar loadEntityAvatar(EntityRenderState entity, CompoundTag nbt) {
-        Avatar targetAvatar = new Avatar(entity);
-        targetAvatar.load(nbt);
         Integer id = entity instanceof AvatarRenderState playerRenderState ? playerRenderState.id : ((FiguraEntityRenderStateExtension)entity).figura$getEntityId();
         if (id != null) {
+            Entity cachedEntity = getCachedEntity(id.intValue());
+            if (cachedEntity == null)
+                return null;
+
+            Avatar targetAvatar = new Avatar(cachedEntity);
+            targetAvatar.load(nbt);
             LOADED_CEM.put(id.intValue(), targetAvatar);
-            AvatarManager.ENTITY_CACHE.putIfAbsent(id.intValue(), WorldAPI.getCurrentWorld().getEntity(id));
+            AvatarManager.ENTITY_CACHE.putIfAbsent(id.intValue(), cachedEntity);
+            return targetAvatar;
         }
-        return targetAvatar;
+
+        return null;
     }
 
     // set an user's avatar
     public static void setAvatar(UUID id, CompoundTag nbt) {
         try {
-            UserData user = LOADED_USERS.computeIfAbsent(id, UserData::new);
             clearAvatars(id);
+            UserData user = LOADED_USERS.computeIfAbsent(id, UserData::new);
             user.loadAvatar(nbt);
         } catch (Exception e) {
             FiguraMod.LOGGER.error("Failed to set avatar for " + id, e);

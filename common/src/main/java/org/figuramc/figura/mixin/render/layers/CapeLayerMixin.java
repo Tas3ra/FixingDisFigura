@@ -50,6 +50,7 @@ public abstract class CapeLayerMixin extends RenderLayer<AvatarRenderState, Play
 
     @Inject(method = "submit(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;ILnet/minecraft/client/renderer/entity/state/AvatarRenderState;FF)V", at = @At("HEAD"))
     private void preRender(PoseStack pose, SubmitNodeCollector submitNodeCollector, int i, AvatarRenderState playerRenderState, float f, float g, CallbackInfo ci) {
+        avatar = null;
         ItemStack itemStack = playerRenderState.chestEquipment;
         if (playerRenderState.isInvisible || itemStack.is(Items.ELYTRA))
             return;
@@ -57,6 +58,7 @@ public abstract class CapeLayerMixin extends RenderLayer<AvatarRenderState, Play
         avatar = AvatarManager.getAvatar(playerRenderState);
         if (avatar == null)
             return;
+        Avatar localAvatar = avatar;
 
         // Acquire reference to fake cloak
         ModelPart fakeCloak = ((PlayerModelCapeAccessor) model).figura$getFakeCloak();
@@ -66,7 +68,10 @@ public abstract class CapeLayerMixin extends RenderLayer<AvatarRenderState, Play
         fakeCloak.loadPose(realCloak.storePose());
 
         // REFERENCED FROM CODE IN CapeLayer (CapeFeatureRenderer for Yarn), logic now in ClientAvatarState
-        AbstractClientPlayer entity = (AbstractClientPlayer) (Minecraft.getInstance().level.getEntity(playerRenderState.id));
+        if (Minecraft.getInstance().level == null || !(Minecraft.getInstance().level.getEntity(playerRenderState.id) instanceof AbstractClientPlayer entity)) {
+            avatar = null;
+            return;
+        }
         float tickDelta = ((FiguraEntityRenderStateExtension)playerRenderState).figura$getTickDelta();
 
         ClientAvatarStateAccessor entityState = (ClientAvatarStateAccessor) entity.avatarState();
@@ -98,7 +103,7 @@ public abstract class CapeLayerMixin extends RenderLayer<AvatarRenderState, Play
         // If someone wants to spend the time to correct these inaccuracies for us, feel free to make a pull request.
 
         // pos
-        if (itemStack.isEmpty() || (avatar.luaRuntime != null && !avatar.luaRuntime.vanilla_model.CHESTPLATE_BODY.checkVisible())) {
+        if (itemStack.isEmpty() || (localAvatar.luaRuntime != null && !localAvatar.luaRuntime.vanilla_model.CHESTPLATE_BODY.checkVisible())) {
             if (entity.isCrouching()) {
                 q += 25f;
                 fakeCloak.y = 2.25f;
@@ -132,16 +137,16 @@ public abstract class CapeLayerMixin extends RenderLayer<AvatarRenderState, Play
             );
 
             // Copy rotations from fake cloak
-            if (avatar.luaRuntime != null) {
-                VanillaPart part = avatar.luaRuntime.vanilla_model.CAPE;
+            if (localAvatar.luaRuntime != null) {
+                VanillaPart part = localAvatar.luaRuntime.vanilla_model.CAPE;
                 part.save(model);
-                if (avatar.permissions.get(Permissions.VANILLA_MODEL_EDIT) == 1)
+                if (localAvatar.permissions.get(Permissions.VANILLA_MODEL_EDIT) == 1)
                     part.preTransform(model);
             }
 
             // Setup visibility for real cloak
-            if (RenderUtils.vanillaModelAndScript(avatar))
-                avatar.luaRuntime.vanilla_model.CAPE.posTransform(model);
+            if (RenderUtils.vanillaModelAndScript(localAvatar))
+                localAvatar.luaRuntime.vanilla_model.CAPE.posTransform(model);
 
             return true;
         });
@@ -150,7 +155,7 @@ public abstract class CapeLayerMixin extends RenderLayer<AvatarRenderState, Play
         poseStack.pushPose();
         poseStack.last().set(pose.last());
 
-        ((NodeCollectorExtension)submitNodeCollector).submitFiguraModel(avatar, playerRenderState, (avatar, renderState, multiBufferSource) -> {
+        ((NodeCollectorExtension)submitNodeCollector).submitFiguraModel(localAvatar, playerRenderState, (avatar, renderState, multiBufferSource) -> {
             // rot
             fakeCloak.setRotation(
                     (float) Math.toRadians(6f + finalR / 2f + finalQ),
@@ -171,13 +176,16 @@ public abstract class CapeLayerMixin extends RenderLayer<AvatarRenderState, Play
 
         });
         submitCallBackExtension.figura$addPostRenderingCallback(() -> {
-            if (avatar == null)
-                return;
+            if (localAvatar.luaRuntime != null)
+                localAvatar.luaRuntime.vanilla_model.CAPE.restore(model);
 
-            if (avatar.luaRuntime != null)
-                avatar.luaRuntime.vanilla_model.CAPE.restore(model);
-
-            avatar = null;
+            if (avatar == localAvatar)
+                avatar = null;
         });
+    }
+
+    @Inject(method = "submit(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;ILnet/minecraft/client/renderer/entity/state/AvatarRenderState;FF)V", at = @At("RETURN"))
+    private void clearAvatar(PoseStack pose, SubmitNodeCollector submitNodeCollector, int i, AvatarRenderState playerRenderState, float f, float g, CallbackInfo ci) {
+        avatar = null;
     }
 }

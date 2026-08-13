@@ -59,9 +59,12 @@ public abstract class PlayerItemInHandLayerMixin <S extends AvatarRenderState, M
 
         boolean left = humanoidArm == HumanoidArm.LEFT;
 
-        Avatar av = AvatarManager.getAvatar(figura$renderState);
-        if (!RenderUtils.renderArmItem(av, left, ci))
+        Avatar av = AvatarManager.getAvatar(figura$renderState == null ? avatarRenderState : figura$renderState);
+        if (!RenderUtils.renderArmItem(av, left, ci)) {
+            if (ci.isCancelled())
+                figura$renderState = null;
             return;
+        }
 
         // pivot part
         if (av.pivotPartRender(left ? ParentType.LeftSpyglassPivot : ParentType.RightSpyglassPivot, stack -> {
@@ -72,14 +75,21 @@ public abstract class PlayerItemInHandLayerMixin <S extends AvatarRenderState, M
             ItemTransform transform = ((FiguraItemStackRenderStateExtension)itemStackRenderState).figura$getItemTransform();
             NodeCollectorExtension nodeCollectorExtension = (NodeCollectorExtension) submitNodeCollector;
             nodeCollectorExtension.submitFiguraModel(av, avatarRenderState, (avatar, entityState, multibufferSource) -> {
-                if (!avatar.itemRenderEvent(ItemStackAPI.verify(((FiguraItemStackRenderStateExtension)itemStackRenderState).figura$getItemStack()), ((FiguraItemStackRenderStateExtension)itemStackRenderState).figura$getDisplayContext().name(), FiguraVec3.fromVec3f(transform.translation()), FiguraVec3.of(transform.rotation().z(), transform.rotation().y(), transform.rotation().x()), FiguraVec3.fromVec3f(transform.scale()), ((FiguraItemStackRenderStateExtension) itemStackRenderState).figura$isLeftHanded(), stack, submitNodeCollector, light, OverlayTexture.NO_OVERLAY))
+                ItemStack figuraStack = ((FiguraItemStackRenderStateExtension)itemStackRenderState).figura$getItemStack();
+                if (figuraStack == null || !avatar.itemRenderEvent(ItemStackAPI.verify(figuraStack), ((FiguraItemStackRenderStateExtension)itemStackRenderState).figura$getDisplayContext().name(), FiguraVec3.fromVec3f(transform.translation()), FiguraVec3.of(transform.rotation().z(), transform.rotation().y(), transform.rotation().x()), FiguraVec3.fromVec3f(transform.scale()), ((FiguraItemStackRenderStateExtension) itemStackRenderState).figura$isLeftHanded(), stack, submitNodeCollector, light, OverlayTexture.NO_OVERLAY))
                     itemStackRenderState.submit(stack, submitNodeCollector, light, OverlayTexture.NO_OVERLAY, entityState.outlineColor);
 
                 return null;
             });
 
         })) {
+            figura$renderState = null;
             ci.cancel();
         }
+    }
+
+    @Inject(method = "submitArmWithItem(Lnet/minecraft/client/renderer/entity/state/AvatarRenderState;Lnet/minecraft/client/renderer/item/ItemStackRenderState;Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/entity/HumanoidArm;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;I)V", at = @At("RETURN"))
+    void clearState(S avatarRenderState, ItemStackRenderState itemStackRenderState, ItemStack itemStack, HumanoidArm humanoidArm, PoseStack poseStack, SubmitNodeCollector submitNodeCollector, int i, CallbackInfo ci) {
+        this.figura$renderState = null;
     }
 }

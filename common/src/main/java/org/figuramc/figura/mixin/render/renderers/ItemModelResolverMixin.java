@@ -19,4 +19,14 @@ public class ItemModelResolverMixin {
     private void injectItemStack(ItemStackRenderState itemStackRenderState, ItemStack itemStack, ItemDisplayContext itemDisplayContext, Level level, ItemOwner itemOwner, int i, CallbackInfo ci) {
         ((FiguraItemStackRenderStateExtension)itemStackRenderState).figura$setItemStack(itemStack);
     }
+
+    @Inject(method = "updateForTopItem", at = @At("RETURN"))
+    private void injectFinalItemStack(ItemStackRenderState itemStackRenderState, ItemStack itemStack, ItemDisplayContext itemDisplayContext, Level level, ItemOwner itemOwner, int i, CallbackInfo ci) {
+        ((FiguraItemStackRenderStateExtension)itemStackRenderState).figura$setItemStack(itemStack);
+    }
+
+    @Inject(method = "updateForLiving", at = @At("RETURN"), require = 0)
+    private void injectLivingItemStack(ItemStackRenderState itemStackRenderState, ItemStack itemStack, ItemDisplayContext itemDisplayContext, LivingEntity livingEntity, CallbackInfo ci) {
+        ((FiguraItemStackRenderStateExtension)itemStackRenderState).figura$setItemStack(itemStack);
+    }
 }

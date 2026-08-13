@@ -74,6 +74,7 @@ public abstract class ElytraLayerMixin<T extends LivingEntity, S extends Humanoi
 
     @Inject(at = @At(value = "HEAD"), method = "submit(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;ILnet/minecraft/client/renderer/entity/state/HumanoidRenderState;FF)V")
     public void setAvatar(PoseStack poseStack, SubmitNodeCollector submitNodeCollector, int i, S humanoidRenderState, float f, float g, CallbackInfo ci) {
+        figura$clearRenderContext();
         figura$avatar = AvatarManager.getAvatar(humanoidRenderState);
     }
 
@@ -136,8 +137,21 @@ public abstract class ElytraLayerMixin<T extends LivingEntity, S extends Humanoi
 
         if (renderedPivot) {
             poseStack.popPose();
+            figura$clearRenderContext();
             ci.cancel();
         }
+    }
+
+    @Inject(at = @At("RETURN"), method = "submit(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;ILnet/minecraft/client/renderer/entity/state/HumanoidRenderState;FF)V")
+    public void clearAvatar(PoseStack poseStack, SubmitNodeCollector submitNodeCollector, int i, S humanoidRenderState, float f, float g, CallbackInfo ci) {
+        figura$clearRenderContext();
+    }
+
+    @Unique
+    private void figura$clearRenderContext() {
+        vanillaPart = null;
+        figura$avatar = null;
+        renderedPivot = false;
     }
 
     public void submitElytraPivot(S state, PoseStack poseStack, SubmitNodeCollector nodeCollector, int light, ElytraModel elytraModel) {

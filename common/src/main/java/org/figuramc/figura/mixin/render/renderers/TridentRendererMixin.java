@@ -1,7 +1,6 @@
 package org.figuramc.figura.mixin.render.renderers;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.object.projectile.TridentModel;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.SubmitNodeCollector;
@@ -45,8 +44,8 @@ public abstract class TridentRendererMixin<T extends ThrownTrident, S extends Th
         if (id == null)
             return;
 
-        Projectile trident = (Projectile) AvatarManager.ENTITY_CACHE.computeIfAbsent(id, (id2) -> Minecraft.getInstance().level.getEntity(id2));
-        if (trident == null)
+        Entity cachedEntity = AvatarManager.getCachedEntity(id);
+        if (!(cachedEntity instanceof Projectile trident))
             return;
 
         float tickDelta = ((FiguraProjectileRenderStateExtension)thrownTridentRenderState).figura$getTickDelta();

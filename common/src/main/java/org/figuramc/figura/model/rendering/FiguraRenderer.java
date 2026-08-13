@@ -144,8 +144,19 @@ public abstract class FiguraRenderer {
     protected void clean() {
         for (FiguraTextureSet set : textureSets)
             set.clean();
+        for (FiguraTexture texture : textures.values())
+            texture.closeFromRenderThread();
         for (FiguraTexture texture : customTextures.values())
             texture.close();
+        textureSets.clear();
+        textures.clear();
+        customTextures.clear();
+        separatedParts.clear();
+        pivotCustomizations.clear();
+        root = null;
+        entity = null;
+        bufferSource = null;
+        itemToRender = null;
     }
 
     public void invalidate() {

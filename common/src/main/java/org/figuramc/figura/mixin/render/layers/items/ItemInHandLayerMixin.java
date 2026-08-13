@@ -50,13 +50,17 @@ public abstract class ItemInHandLayerMixin<S extends ArmedEntityRenderState, M e
     protected void renderArmWithItemInject(S state, ItemStackRenderState itemStackRenderState, ItemStack itemStack, HumanoidArm humanoidArm, PoseStack poseStack, SubmitNodeCollector submitNodeCollector, int light, CallbackInfo ci) {
         av = AvatarManager.getAvatar(state);
 
-        if (itemStackRenderState.isEmpty())
+        if (itemStackRenderState.isEmpty()) {
+            av = null;
             return;
+        }
 
         boolean left = humanoidArm == HumanoidArm.LEFT;
 
-        if (!RenderUtils.renderArmItem(av, left, ci))
+        if (!RenderUtils.renderArmItem(av, left, ci)) {
+            av = null;
             return;
+        }
 
         // pivot part
         if (av.pivotPartRender(left ? ParentType.LeftItemPivot : ParentType.RightItemPivot, stack -> {
@@ -64,8 +68,12 @@ public abstract class ItemInHandLayerMixin<S extends ArmedEntityRenderState, M e
             stack.scale(s, s, s);
             stack.mulPose(Axis.XP.rotationDegrees(-90f));
             // Must do this bs manually
-            if (((FiguraItemStackRenderStateExtension)itemStackRenderState).figura$getItemStack().getItem() instanceof BlockItem bl && bl.getBlock() instanceof AbstractSkullBlock) {
+            ItemStack figuraStack = ((FiguraItemStackRenderStateExtension)itemStackRenderState).figura$getItemStack();
+            if (figuraStack == null)
+                figuraStack = itemStack;
+            if (figuraStack != null && figuraStack.getItem() instanceof BlockItem bl && bl.getBlock() instanceof AbstractSkullBlock) {
                 Entity entity = AvatarManager.getEntity(state);
+                SkullBlockRendererAccessor.clear();
                 SkullBlockRendererAccessor.setEntity(entity);
                 SkullBlockRendererAccessor.setRenderMode(switch (((FiguraItemStackRenderStateExtension) itemStackRenderState).figura$getDisplayContext()) {
                     case FIRST_PERSON_LEFT_HAND -> SkullBlockRendererAccessor.SkullRenderMode.FIRST_PERSON_LEFT_HAND;
@@ -80,7 +88,7 @@ public abstract class ItemInHandLayerMixin<S extends ArmedEntityRenderState, M e
             // sorta have to do this manually otherwise itemRenderEvent isn't called
             ItemTransform transform = ((FiguraItemStackRenderStateExtension)itemStackRenderState).figura$getItemTransform();
 
-            if (av == null || !av.itemRenderEvent(ItemStackAPI.verify(((FiguraItemStackRenderStateExtension)itemStackRenderState).figura$getItemStack()),
+            if (av == null || figuraStack == null || !av.itemRenderEvent(ItemStackAPI.verify(figuraStack),
                     ((FiguraItemStackRenderStateExtension)itemStackRenderState).figura$getDisplayContext().name(), FiguraVec3.fromVec3f(transform.translation()),
                     FiguraVec3.of(transform.rotation().z(), transform.rotation().y(), transform.rotation().x()), FiguraVec3.fromVec3f(transform.scale()),
                     ((FiguraItemStackRenderStateExtension)itemStackRenderState).figura$isLeftHanded(), stack, submitNodeCollector, light, OverlayTexture.NO_OVERLAY)
@@ -88,6 +96,7 @@ public abstract class ItemInHandLayerMixin<S extends ArmedEntityRenderState, M e
                 itemStackRenderState.submit(stack, submitNodeCollector, light, OverlayTexture.NO_OVERLAY, state.outlineColor);
         })) {
             ci.cancel();
+            av = null;
         }
     }
 
@@ -96,6 +105,7 @@ public abstract class ItemInHandLayerMixin<S extends ArmedEntityRenderState, M e
         ItemStack stack = ((FiguraItemStackRenderStateExtension)instance).figura$getItemStack();
         Entity entity = AvatarManager.getEntity(armedState);
         if (av != null && stack != null && entity != null && stack.getItem() instanceof BlockItem bl && bl.getBlock() instanceof AbstractSkullBlock sk) {
+            SkullBlockRendererAccessor.clear();
             SkullBlockRendererAccessor.setEntity(entity);
             SkullBlockRendererAccessor.setRenderMode(switch (((FiguraItemStackRenderStateExtension) instance).figura$getDisplayContext()) {
                 case FIRST_PERSON_LEFT_HAND -> SkullBlockRendererAccessor.SkullRenderMode.FIRST_PERSON_LEFT_HAND;
@@ -108,11 +118,16 @@ public abstract class ItemInHandLayerMixin<S extends ArmedEntityRenderState, M e
         }
         ItemTransform transform = ((FiguraItemStackRenderStateExtension)instance).figura$getItemTransform();
 
-        if (av == null || !av.itemRenderEvent(ItemStackAPI.verify(stack), ((FiguraItemStackRenderStateExtension) instance).figura$getDisplayContext().name(),
+        if (av == null || stack == null || !av.itemRenderEvent(ItemStackAPI.verify(stack), ((FiguraItemStackRenderStateExtension) instance).figura$getDisplayContext().name(),
                 FiguraVec3.fromVec3f(transform.translation()), FiguraVec3.of(transform.rotation().z(), transform.rotation().y(), transform.rotation().x()),
                 FiguraVec3.fromVec3f(transform.scale()), ((FiguraItemStackRenderStateExtension) instance).figura$isLeftHanded(),
                 matrices, submitNodeCollector, light, overlay)
         )
             original.call(instance, matrices, submitNodeCollector, light, overlay, outlineColor);
+    }
+
+    @Inject(method = "submitArmWithItem", at = @At("RETURN"))
+    private void clearAvatar(S state, ItemStackRenderState itemStackRenderState, ItemStack itemStack, HumanoidArm humanoidArm, PoseStack poseStack, SubmitNodeCollector submitNodeCollector, int light, CallbackInfo ci) {
+        av = null;
     }
 }

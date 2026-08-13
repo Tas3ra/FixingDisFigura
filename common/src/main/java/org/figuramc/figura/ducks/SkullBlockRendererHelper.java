@@ -11,4 +11,8 @@ public class SkullBlockRendererHelper {
     public static Avatar getAvatar() {
         return avatar;
     }
+
+    public static void clear() {
+        avatar = null;
+    }
 }

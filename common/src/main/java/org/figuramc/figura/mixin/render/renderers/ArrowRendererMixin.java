@@ -1,7 +1,6 @@
 package org.figuramc.figura.mixin.render.renderers;
 
 import com.llamalad7.mixinextras.sugar.Local;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.Model;
 import net.minecraft.client.renderer.entity.ArrowRenderer;
 import net.minecraft.client.renderer.entity.EntityRenderer;
@@ -37,8 +36,8 @@ public abstract class ArrowRendererMixin<T extends AbstractArrow, S extends Arro
         if (id == null)
             return par1;
 
-        Projectile arrow = (Projectile) AvatarManager.ENTITY_CACHE.computeIfAbsent(id, (id2) -> Minecraft.getInstance().level.getEntity(id2));
-        if (arrow == null)
+        Entity cachedEntity = AvatarManager.getCachedEntity(id);
+        if (!(cachedEntity instanceof Projectile arrow))
             return par1;
 
         float tickDelta = ((FiguraProjectileRenderStateExtension)arrowRenderState).figura$getTickDelta();
