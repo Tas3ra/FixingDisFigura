@@ -15,24 +15,29 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class TextRenderUtils {
-    private static final List<DeferredTextTask> DEFERRED_TEXT_TASKS = new ArrayList<>();
+    private static final List<DeferredTextTask> WORLD_DEFERRED_TEXT_TASKS = new ArrayList<>();
+    private static final List<DeferredTextTask> IMMEDIATE_TEXT_TASKS = new ArrayList<>();
     private static boolean deferringTextTasks;
+    private static boolean immediateTextTaskLayer;
 
     private TextRenderUtils() {
     }
 
     public static void beginDeferredTextTasks() {
-        DEFERRED_TEXT_TASKS.clear();
         deferringTextTasks = true;
+        immediateTextTaskLayer = false;
     }
 
     public static void endDeferredTextTasks() {
         deferringTextTasks = false;
+        immediateTextTaskLayer = false;
     }
 
     public static void clearDeferredTextTasks() {
-        DEFERRED_TEXT_TASKS.clear();
+        WORLD_DEFERRED_TEXT_TASKS.clear();
+        IMMEDIATE_TEXT_TASKS.clear();
         deferringTextTasks = false;
+        immediateTextTaskLayer = false;
     }
 
     public static boolean isDeferringTextTasks() {
@@ -40,34 +45,63 @@ public final class TextRenderUtils {
     }
 
     public static boolean hasDeferredTextTasks() {
-        return !DEFERRED_TEXT_TASKS.isEmpty();
+        return !WORLD_DEFERRED_TEXT_TASKS.isEmpty();
+    }
+
+    public static boolean beginImmediateTextTaskLayer() {
+        if (deferringTextTasks)
+            return false;
+
+        IMMEDIATE_TEXT_TASKS.clear();
+        deferringTextTasks = true;
+        immediateTextTaskLayer = true;
+        return true;
+    }
+
+    public static void renderImmediateTextTaskLayer(MultiBufferSource.BufferSource buffer) {
+        if (!immediateTextTaskLayer)
+            return;
+
+        try {
+            renderTextTasks(buffer, IMMEDIATE_TEXT_TASKS);
+        } finally {
+            IMMEDIATE_TEXT_TASKS.clear();
+            deferringTextTasks = false;
+            immediateTextTaskLayer = false;
+        }
     }
 
     public static void queueTextTask(Matrix4f matrix, List<Component> text, TextUtils.Alignment alignment,
                                      boolean shadow, boolean outline, int backgroundColor, int outlineColor,
                                      int opacityColor, int light, int width, int height, float vertexOffset) {
-        DEFERRED_TEXT_TASKS.add(new DeferredTextTask(new Matrix4f(matrix), List.copyOf(text), alignment, shadow, outline,
+        List<DeferredTextTask> queue = immediateTextTaskLayer ? IMMEDIATE_TEXT_TASKS : WORLD_DEFERRED_TEXT_TASKS;
+        queue.add(new DeferredTextTask(new Matrix4f(matrix), List.copyOf(text), alignment, shadow, outline,
                 backgroundColor, outlineColor, opacityColor, light, width, height, vertexOffset));
     }
 
     public static void renderDeferredTextTasks(MultiBufferSource.BufferSource buffer) {
+        try {
+            renderTextTasks(buffer, WORLD_DEFERRED_TEXT_TASKS);
+        } finally {
+            WORLD_DEFERRED_TEXT_TASKS.clear();
+        }
+    }
+
+    private static void renderTextTasks(MultiBufferSource.BufferSource buffer, List<DeferredTextTask> tasks) {
         Font font = Minecraft.getInstance().font;
 
-        try {
-            for (DeferredTextTask task : DEFERRED_TEXT_TASKS)
-                renderDeferredTextTask(font, buffer, task);
-        } finally {
-            DEFERRED_TEXT_TASKS.clear();
-        }
+        for (DeferredTextTask task : tasks)
+            renderDeferredTextTask(font, buffer, task);
     }
 
     public static void drawText(Font font, Component text, float x, float y, int color, boolean shadow,
                                 Matrix4f matrix, MultiBufferSource buffer, Font.DisplayMode displayMode, int light) {
         if (displayMode == Font.DisplayMode.SEE_THROUGH) {
+            FormattedCharSequence visualText = TextUtils.stripLineSeparatorGlyphs(text.getVisualOrderText());
             if (shadow)
-                font.drawInBatch(withShadowColors(text.getVisualOrderText(), color), x + 1f, y + 1f, shadowColor(color), false, matrix, buffer, displayMode, 0, light);
+                font.drawInBatch(withShadowColors(visualText, color), x + 1f, y + 1f, shadowColor(color), false, matrix, buffer, displayMode, 0, light);
 
-            font.drawInBatch(text, x, y, color, false, matrix, buffer, displayMode, 0, light);
+            font.drawInBatch(visualText, x, y, color, false, matrix, buffer, displayMode, 0, light);
             return;
         }
 
@@ -77,6 +111,7 @@ public final class TextRenderUtils {
     public static void drawOutlinedText(Font font, FormattedCharSequence text, float x, float y, int color,
                                         int outlineColor, Matrix4f matrix, MultiBufferSource buffer,
                                         Font.DisplayMode displayMode, int light) {
+        text = TextUtils.stripLineSeparatorGlyphs(text);
         Font.PreparedTextBuilder outlineBuilder = font.new PreparedTextBuilder(0, 0, outlineColor, false, false);
 
         for (int xOffset = -1; xOffset <= 1; xOffset++) {
@@ -130,6 +165,9 @@ public final class TextRenderUtils {
     private static FormattedCharSequence withShadowColors(FormattedCharSequence text, int fallbackColor) {
         int fallbackRgb = fallbackColor & 0x00FFFFFF;
         return sink -> text.accept((index, style, codePoint) -> {
+            if (TextUtils.isLineSeparatorCodePoint(codePoint))
+                return true;
+
             int rgb = style.getColor() != null ? style.getColor().getValue() : fallbackRgb;
             return sink.accept(index, style.withColor(shadowColor(rgb) & 0x00FFFFFF), codePoint);
         });

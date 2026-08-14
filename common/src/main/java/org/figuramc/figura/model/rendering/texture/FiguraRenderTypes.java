@@ -72,6 +72,10 @@ public enum FiguraRenderTypes {
         return offset;
     }
 
+    public boolean isFullBright() {
+        return this == EMISSIVE || this == EMISSIVE_SOLID || this == EYES || this == CUTOUT_EMISSIVE_SOLID;
+    }
+
     public RenderType get(Identifier id) {
         if (!texture)
             return func.apply(id);

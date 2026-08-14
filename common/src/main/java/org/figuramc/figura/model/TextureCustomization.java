@@ -13,6 +13,7 @@ import net.minecraft.server.packs.resources.Resource;
 import org.figuramc.figura.avatar.Avatar;
 import org.figuramc.figura.mixin.render.MissingTextureAtlasSpriteAccessor;
 import org.figuramc.figura.mixin.render.TextureAtlasAccessor;
+import org.figuramc.figura.model.rendering.FiguraRenderer;
 import org.figuramc.figura.model.rendering.texture.FiguraTexture;
 import org.figuramc.figura.model.rendering.texture.FiguraTextureSet;
 import org.luaj.vm2.LuaError;
@@ -38,12 +39,18 @@ public class TextureCustomization {
     }
 
     public FiguraTexture getTexture(Avatar avatar, FiguraTextureSet textureSet) {
-        if (avatar.render == null) return null;
+        FiguraRenderer renderer = avatar.renderer;
+        if (avatar.render == null || renderer == null) return null;
 
         Identifier resourceLocation = textureSet.getOverrideTexture(avatar.owner, this);
+        if (resourceLocation == null)
+            return null;
+
         String name = resourceLocation.toString();
-        if (avatar.renderer.customTextures.containsKey(name)) {
-            return avatar.renderer.customTextures.get(name);
+        synchronized (renderer) {
+            FiguraTexture texture = renderer.customTextures.get(name);
+            if (texture != null)
+                return texture;
         }
 
         // is there a way to check if an atlas exists without getAtlas? cause that is the only thing that will cause an error, and try catch blocks can be pricy

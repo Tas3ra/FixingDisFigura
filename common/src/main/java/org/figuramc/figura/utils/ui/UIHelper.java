@@ -507,8 +507,9 @@ public final class UIHelper {
     public static void renderOutlineText(GuiGraphics gui, Font textRenderer, Component text, int x, int y, int color, int outline) {
         color = adjustColor(color);
         outline = adjustColor(outline);
-        ((GuiGraphicsAccessor)gui).figura$getRenderState().submitText(new OutlinedGuiTextRenderState(textRenderer, text.getVisualOrderText(), new Matrix3x2f(gui.pose()), x, y, color, outline, ((GuiGraphicsAccessor)gui).figura$getScissorStack().peek()));
-        gui.drawString(textRenderer, text, x, y, color, false);
+        FormattedCharSequence visualText = TextUtils.stripLineSeparatorGlyphs(text.getVisualOrderText());
+        ((GuiGraphicsAccessor)gui).figura$getRenderState().submitText(new OutlinedGuiTextRenderState(textRenderer, visualText, new Matrix3x2f(gui.pose()), x, y, color, outline, ((GuiGraphicsAccessor)gui).figura$getScissorStack().peek()));
+        gui.drawString(textRenderer, visualText, x, y, color);
     }
 
     public static void renderTooltip(GuiGraphics gui, Component tooltip, int mouseX, int mouseY, boolean background) {

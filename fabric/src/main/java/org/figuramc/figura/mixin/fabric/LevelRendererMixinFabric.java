@@ -83,11 +83,18 @@ public class LevelRendererMixinFabric {
         MultiBufferSource.BufferSource bufferSource = this.renderBuffers.bufferSource();
         avatar.firstPersonWorldRender(e, bufferSource, stack, camera, tickDelta);
 
-        // first person matrices
-        if (Configs.FIRST_PERSON_MATRICES.value) {
-            Avatar.firstPerson = true;
+        featureRenderDispatcher.renderAllFeatures();
+        bufferSource.endLastBatch();
 
-            int lastIndex = ((PoseStackAccessor)stack).getLastIndex();
+        // first person matrices
+        if (Configs.FIRST_PERSON_MATRICES.value)
+            figura$updateFirstPersonMatrices(levelRenderState, stack, camera, tickDelta, livingEntity, entityRenderer, state);
+    }
+
+    private void figura$updateFirstPersonMatrices(LevelRenderState levelRenderState, PoseStack stack, Camera camera, float tickDelta, LivingEntity livingEntity, EntityRenderer<LivingEntity, LivingEntityRenderState> entityRenderer, LivingEntityRenderState state) {
+        int lastIndex = ((PoseStackAccessor)stack).getLastIndex();
+        Avatar.firstPerson = true;
+        try {
             stack.pushPose();
             Vec3 offset = entityRenderer.getRenderOffset(state);
             Vec3 cam = camera.position();
@@ -98,15 +105,12 @@ public class LevelRendererMixinFabric {
             );
 
             entityRenderer.submit(state, stack, this.submitNodeStorage, levelRenderState.cameraRenderState);
-            do {
+        } finally {
+            while (((PoseStackAccessor)stack).getLastIndex() > lastIndex) {
                 stack.popPose();
-            } while(((PoseStackAccessor)stack).getLastIndex() > lastIndex);
+            }
+            Avatar.firstPerson = false;
         }
-
-        featureRenderDispatcher.renderAllFeatures();
-        bufferSource.endLastBatch(); // do a vanilla hand and render the hand/parts immediately
-
-        Avatar.firstPerson = false;
     }
 
     @WrapOperation(method = {"method_62214"}, at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/feature/FeatureRenderDispatcher;renderAllFeatures()V"))

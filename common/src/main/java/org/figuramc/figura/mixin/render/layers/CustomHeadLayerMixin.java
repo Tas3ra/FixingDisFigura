@@ -33,6 +33,7 @@ import org.figuramc.figura.ducks.FiguraEntityRenderStateExtension;
 import org.figuramc.figura.ducks.FiguraItemStackRenderStateExtension;
 import org.figuramc.figura.ducks.NodeCollectorExtension;
 import org.figuramc.figura.ducks.SkullBlockRendererAccessor;
+import org.figuramc.figura.ducks.SkullBlockRendererHelper;
 import org.figuramc.figura.lua.api.world.ItemStackAPI;
 import org.figuramc.figura.math.vector.FiguraVec3;
 import org.figuramc.figura.model.ParentType;
@@ -95,17 +96,19 @@ public abstract class CustomHeadLayerMixin<S extends LivingEntityRenderState, M 
             // render!!
             if (localAvatar.pivotPartRender(ParentType.HelmetItemPivot, stack -> {
                 float s = 19f;
-                stack.scale(s, s, s);
+                stack.scale(s, -s, -s);
                 stack.translate(-0.5d, 0d, -0.5d);
 
                 // set item context
                 SkullBlockRendererAccessor.clear();
+                SkullBlockRendererHelper.clear();
                 SkullBlockRendererAccessor.setItem(itemStack);
+                SkullBlockRendererHelper.setAvatar(AvatarManager.getAvatarForItem(itemStack));
                 Integer id = ((FiguraEntityRenderStateExtension)entityState).figura$getEntityId();
                 if (id != null && Minecraft.getInstance().level != null)
                     SkullBlockRendererAccessor.setEntity(Minecraft.getInstance().level.getEntity(id));
                 SkullBlockRendererAccessor.setRenderMode(SkullBlockRendererAccessor.SkullRenderMode.HEAD);
-                SkullBlockRenderer.submitSkull(null, 0f, f, stack, submitNodeCollector, i, skullModelBase,
+                SkullBlockRenderer.submitSkull(null, 180f, entityState.wornHeadAnimationPos, stack, submitNodeCollector, i, skullModelBase,
                         renderType, entityState.outlineColor, null);
             })) {
                 avatar = null;
@@ -138,9 +141,11 @@ public abstract class CustomHeadLayerMixin<S extends LivingEntityRenderState, M 
     @Inject(at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/blockentity/SkullBlockRenderer;submitSkull(Lnet/minecraft/core/Direction;FFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;ILnet/minecraft/client/model/object/skull/SkullModelBase;Lnet/minecraft/client/renderer/rendertype/RenderType;ILnet/minecraft/client/renderer/feature/ModelFeatureRenderer$CrumblingOverlay;)V"), method = "submit(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;ILnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;FF)V")
     private void renderSkull(PoseStack poseStack, SubmitNodeCollector submitNodeCollector, int i, S livingEntityRenderState, float f, float g, CallbackInfo ci) {
         SkullBlockRendererAccessor.clear();
+        SkullBlockRendererHelper.clear();
         ItemStack stack = ((FiguraItemStackRenderStateExtension)livingEntityRenderState.headItem).figura$getItemStack();
         if (stack == null) return;
         SkullBlockRendererAccessor.setItem(stack);
+        SkullBlockRendererHelper.setAvatar(AvatarManager.getAvatarForItem(stack));
         Integer id = ((FiguraEntityRenderStateExtension)livingEntityRenderState).figura$getEntityId();
         if (id != null && Minecraft.getInstance().level != null && Minecraft.getInstance().level.getEntity(id) != null)
             SkullBlockRendererAccessor.setEntity(Minecraft.getInstance().level.getEntity(id));
@@ -150,5 +155,7 @@ public abstract class CustomHeadLayerMixin<S extends LivingEntityRenderState, M 
     @Inject(at = @At("RETURN"), method = "submit(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;ILnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;FF)V")
     private void clearRenderContext(PoseStack poseStack, SubmitNodeCollector submitNodeCollector, int i, S entityState, float f, float g, CallbackInfo ci) {
         avatar = null;
+        SkullBlockRendererHelper.clear();
+        SkullBlockRendererAccessor.clear();
     }
 }

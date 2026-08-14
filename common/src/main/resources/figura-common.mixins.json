@@ -124,6 +124,7 @@
     "render.renderers.ItemModelResolverMixin",
     "render.renderers.ItemRendererMixin",
     "render.renderers.ItemStackRenderState$LayerRenderStateAccessor",
+    "render.renderers.ItemStackRenderState$LayerRenderStateMixin",
     "render.renderers.ItemStackRenderStateMixin",
     "render.renderers.LivingEntityRendererMixin",
     "render.renderers.PlayerHeadSpecialRendererMixin",

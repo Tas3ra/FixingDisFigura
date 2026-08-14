@@ -105,11 +105,27 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
 
     @Inject(at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/SubmitNodeCollector;submitModel(Lnet/minecraft/client/model/Model;Ljava/lang/Object;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/rendertype/RenderType;IIILnet/minecraft/client/renderer/texture/TextureAtlasSprite;ILnet/minecraft/client/renderer/feature/ModelFeatureRenderer$CrumblingOverlay;)V", shift = At.Shift.BEFORE), method = "submit(Lnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;Lnet/minecraft/client/renderer/state/CameraRenderState;)V", cancellable = true)
     private void setFiguraCallbacks(S livingEntityRenderState, PoseStack poseStack, SubmitNodeCollector submitNodeCollector, CameraRenderState cameraRenderState, CallbackInfo ci) {
+        M model = getModel();
+
+        if (Avatar.firstPerson) {
+            Avatar localAvatar = currentAvatar;
+            if (localAvatar != null) {
+                model.setupAnim(livingEntityRenderState);
+                localAvatar.updateMatrices(model, poseStack);
+            }
+
+            currentAvatar = null;
+            lastPose = null;
+            figura$layerModelState = null;
+            poseStack.popPose();
+            ci.cancel();
+            return;
+        }
+
         if (currentAvatar == null)
             return;
 
         Avatar localAvatar = currentAvatar;
-        M model = getModel();
 
         // so basically set the figura callbacks up before the model is submitted
         FiguraSubmitCallBackExtension submitCallBackExtension = (FiguraSubmitCallBackExtension) model;
@@ -131,22 +147,12 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
     // then submit the figura model once vanilla has set posing up
     @Inject(at = @At(value = "INVOKE", target = "Lnet/minecraft/client/model/EntityModel;setupAnim(Ljava/lang/Object;)V", shift = At.Shift.AFTER), method = "submit(Lnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;Lnet/minecraft/client/renderer/state/CameraRenderState;)V", cancellable = true)
     private void submitFiguraModel(S livingEntityRenderState, PoseStack poseStack, SubmitNodeCollector submitNodeCollector, CameraRenderState cameraRenderState, CallbackInfo ci) {
+        M model = getModel();
+
         if (currentAvatar == null)
             return;
 
         Avatar localAvatar = currentAvatar;
-
-        M model = getModel();
-        
-        if (Avatar.firstPerson) {
-            localAvatar.updateMatrices(model, poseStack);
-            currentAvatar = null;
-            lastPose = null;
-            figura$layerModelState = null;
-            poseStack.popPose();
-            ci.cancel();
-            return;
-        }
 
         boolean showBody = isBodyVisible(livingEntityRenderState);
         boolean translucent = !showBody && !livingEntityRenderState.isInvisibleToPlayer;

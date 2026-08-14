@@ -44,17 +44,22 @@ public class ClickableTextHelper {
         clear();
 
         List<TextLine> lines = new ArrayList<>();
-        List<FormattedText> split = font.getSplitter().splitLines(message, lineWidth, Style.EMPTY);
-        for (FormattedText curLine : split) {
-            List<TextNode> nodes = new ArrayList<>();
+        for (Component messageLine : TextUtils.splitLines(message)) {
+            List<FormattedText> split = font.getSplitter().splitLines(messageLine, lineWidth, Style.EMPTY);
+            if (split.isEmpty())
+                split = List.of(messageLine);
 
-            // Convert the Text into a list
-            TextUtils.formattedTextToText(curLine).visit((style, string) -> {
-                nodes.add(new TextNode(string, style));
-                return Optional.empty();
-            }, Style.EMPTY);
+            for (FormattedText curLine : split) {
+                List<TextNode> nodes = new ArrayList<>();
 
-            lines.add(new TextLine(nodes.toArray(new TextNode[0])));
+                // Convert the Text into a list
+                TextUtils.formattedTextToText(curLine).visit((style, string) -> {
+                    nodes.add(new TextNode(string, style));
+                    return Optional.empty();
+                }, Style.EMPTY);
+
+                lines.add(new TextLine(nodes.toArray(new TextNode[0])));
+            }
         }
 
         this.lines = lines.toArray(new TextLine[0]);

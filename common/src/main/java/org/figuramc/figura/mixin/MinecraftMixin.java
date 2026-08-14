@@ -6,8 +6,20 @@ import net.minecraft.client.Options;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.decoration.ItemFrame;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.ResolvableProfile;
+import net.minecraft.world.level.block.entity.SkullBlockEntity;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 import org.figuramc.figura.FiguraMod;
 import org.figuramc.figura.avatar.Avatar;
 import org.figuramc.figura.avatar.AvatarManager;
@@ -29,6 +41,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.LocalCapture;
 
+import java.util.UUID;
+
 @Mixin(Minecraft.class)
 public abstract class MinecraftMixin {
 
@@ -36,6 +50,7 @@ public abstract class MinecraftMixin {
     @Shadow @Final public Options options;
     @Shadow public LocalPlayer player;
     @Shadow public Entity cameraEntity;
+    @Shadow public HitResult hitResult;
 
     @Shadow public abstract void setScreen(@Nullable Screen screen);
 
@@ -84,14 +99,8 @@ public abstract class MinecraftMixin {
         if (Configs.POPUP_BUTTON.keyBind.isDown()) {
             PopupMenu.setEnabled(true);
 
-            if (!PopupMenu.hasEntity()) {
-                Entity target = FiguraMod.extendedPickEntity;
-                if (this.player != null && target instanceof Player && !target.isInvisibleTo(this.player)) {
-                    PopupMenu.setEntity(target);
-                } else if (!this.options.getCameraType().isFirstPerson()) {
-                    PopupMenu.setEntity(this.cameraEntity);
-                }
-            }
+            if (!PopupMenu.hasEntity())
+                figura$findPopupTarget();
         } else if (PopupMenu.isEnabled()) {
             PopupMenu.run();
         }
@@ -151,5 +160,59 @@ public abstract class MinecraftMixin {
         FiguraMod.pushProfiler(FiguraMod.MOD_ID);
         FiguraMod.tick();
         FiguraMod.popProfiler();
+    }
+
+    @Unique
+    private void figura$findPopupTarget() {
+        Entity target = FiguraMod.extendedPickEntity;
+        float tickDelta = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(false);
+
+        if (this.player != null && target instanceof Player && !target.isInvisibleTo(this.player)) {
+            PopupMenu.setEntity(target);
+            return;
+        }
+
+        if (target != null && this.player != null && !target.isInvisibleTo(this.player)) {
+            Vec3 pos = target.getPosition(tickDelta).add(0d, target.getBbHeight() + 0.1d, 0d);
+            if (figura$setPopupProfileTarget(figura$getProfile(target), pos))
+                return;
+        }
+
+        if (this.player != null && this.hitResult instanceof BlockHitResult blockHit && blockHit.getType() == HitResult.Type.BLOCK) {
+            if (this.player.level().getBlockEntity(blockHit.getBlockPos()) instanceof SkullBlockEntity skullBlockEntity) {
+                Vec3 pos = Vec3.atCenterOf(blockHit.getBlockPos()).add(0d, 0.75d, 0d);
+                if (figura$setPopupProfileTarget(skullBlockEntity.getOwnerProfile(), pos))
+                    return;
+            }
+        }
+
+        if (!this.options.getCameraType().isFirstPerson() && this.cameraEntity != null)
+            PopupMenu.setEntity(this.cameraEntity);
+    }
+
+    @Unique
+    private static ResolvableProfile figura$getProfile(Entity entity) {
+        ItemStack stack = ItemStack.EMPTY;
+        if (entity instanceof ItemFrame itemFrame)
+            stack = itemFrame.getItem();
+        else if (entity instanceof ItemEntity itemEntity)
+            stack = itemEntity.getItem();
+        else if (entity instanceof LivingEntity livingEntity)
+            stack = livingEntity.getItemBySlot(EquipmentSlot.HEAD);
+
+        return stack.isEmpty() ? null : stack.get(DataComponents.PROFILE);
+    }
+
+    @Unique
+    private static boolean figura$setPopupProfileTarget(ResolvableProfile profile, Vec3 pos) {
+        UUID id = AvatarManager.getIdForProfile(profile);
+        if (id == null)
+            return false;
+
+        String name = profile == null || profile.partialProfile() == null ? null : profile.partialProfile().name();
+        if ((name == null || name.isBlank()) && profile != null && profile.name().isPresent())
+            name = profile.name().get();
+        PopupMenu.setProfileTarget(id, name == null || name.isBlank() ? Component.literal(id.toString()) : Component.literal(name), pos);
+        return true;
     }
 }

@@ -18,6 +18,7 @@ import org.figuramc.figura.lua.docs.LuaMethodOverload;
 import org.figuramc.figura.lua.docs.LuaTypeDoc;
 import org.figuramc.figura.mixin.render.MissingTextureAtlasSpriteAccessor;
 import org.figuramc.figura.mixin.render.TextureAtlasAccessor;
+import org.figuramc.figura.model.rendering.FiguraRenderer;
 import org.figuramc.figura.model.rendering.texture.FiguraTexture;
 import org.figuramc.figura.utils.ColorUtils;
 import org.figuramc.figura.utils.LuaUtils;
@@ -44,9 +45,11 @@ public class TextureAPI {
         this.owner = owner;
     }
 
-    private void check() {
-        if (owner.renderer == null)
+    private FiguraRenderer getRenderer() {
+        FiguraRenderer renderer = owner.renderer;
+        if (renderer == null)
             throw new LuaError("Avatar have no active renderer!");
+        return renderer;
     }
 
     public FiguraTexture register(String name, NativeImage image, boolean ignoreSize) {
@@ -131,15 +134,19 @@ public class TextureAPI {
             ),
             value = "textures.get")
     public FiguraTexture get(@LuaNotNil String name) {
-        check();
-        return owner.renderer.customTextures.get(name);
+        FiguraRenderer renderer = getRenderer();
+        synchronized (renderer) {
+            return renderer.customTextures.get(name);
+        }
     }
 
     @LuaWhitelist
     @LuaMethodDoc("textures.get_textures")
     public List<FiguraTexture> getTextures() {
-        check();
-        return new ArrayList<>(owner.renderer.textures.values());
+        FiguraRenderer renderer = getRenderer();
+        synchronized (renderer) {
+            return new ArrayList<>(renderer.textures.values());
+        }
     }
 
     @LuaWhitelist
@@ -151,7 +158,7 @@ public class TextureAPI {
             value = "textures.from_vanilla"
     )
     public FiguraTexture fromVanilla(@LuaNotNil String name, @LuaNotNil String path) {
-        check();
+        getRenderer();
         Identifier resourceLocation = LuaUtils.parsePath(path);
         // is there a way to check if an atlas exists without getAtlas? cause that is the only thing that will cause an error, and try catch blocks can be pricy
         try {
@@ -193,8 +200,10 @@ public class TextureAPI {
 
     @LuaWhitelist
     public FiguraTexture __index(@LuaNotNil String name) {
-        check();
-        return owner.renderer.getTexture(name);
+        FiguraRenderer renderer = getRenderer();
+        synchronized (renderer) {
+            return renderer.getTexture(name);
+        }
     }
 
     @Override

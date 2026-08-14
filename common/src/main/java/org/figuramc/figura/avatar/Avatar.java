@@ -725,40 +725,43 @@ public class Avatar {
         return skullRender(stack, bufferSource, light, direction, yaw, true);
     }
 
-    public boolean skullRender(PoseStack stack, MultiBufferSource bufferSource, int light, Direction direction, float yaw, boolean applySkullPlacement) {
+    public synchronized boolean skullRender(PoseStack stack, MultiBufferSource bufferSource, int light, Direction direction, float yaw, boolean applySkullPlacement) {
+        FiguraRenderer renderer = this.renderer;
         if (renderer == null || !loaded || !renderer.interceptRendersIntoFigura)
             return false;
 
         stack.pushPose();
+        boolean allowPivotParts = renderer.allowPivotParts;
 
-        if (applySkullPlacement) {
-            if (direction == null)
-                stack.translate(0.5d, 0d, 0.5d);
-            else
-                stack.translate((0.5d - direction.getStepX() * 0.25d), 0.25d, (0.5d - direction.getStepZ() * 0.25d));
+        try {
+            if (applySkullPlacement) {
+                if (direction == null)
+                    stack.translate(0.5d, 0d, 0.5d);
+                else
+                    stack.translate((0.5d - direction.getStepX() * 0.25d), 0.25d, (0.5d - direction.getStepZ() * 0.25d));
 
-            stack.scale(-1f, -1f, 1f);
+                stack.scale(-1f, -1f, 1f);
+            }
+
+            stack.mulPose(Axis.YP.rotationDegrees(yaw));
+
+            renderer.allowPivotParts = false;
+
+            renderer.setupRenderer(
+                    PartFilterScheme.SKULL, bufferSource, stack,
+                    1f, light, 1f, OverlayTexture.NO_OVERLAY,
+                    false, false
+            );
+
+            int comp = renderer.renderSpecialParts();
+            complexity.use(comp);
+
+            // head
+            return comp > 0 || headRender(stack, bufferSource, light, true);
+        } finally {
+            renderer.allowPivotParts = allowPivotParts;
+            stack.popPose();
         }
-
-        stack.mulPose(Axis.YP.rotationDegrees(yaw));
-
-        renderer.allowPivotParts = false;
-
-        renderer.setupRenderer(
-                PartFilterScheme.SKULL, bufferSource, stack,
-                1f, light, 1f, OverlayTexture.NO_OVERLAY,
-                false, false
-        );
-
-        int comp = renderer.renderSpecialParts();
-        complexity.use(comp);
-
-        // head
-        boolean bool = comp > 0 || headRender(stack, bufferSource, light, true);
-
-        renderer.allowPivotParts = true;
-        stack.popPose();
-        return bool;
     }
 
     public boolean headRender(PoseStack stack, MultiBufferSource bufferSource, int light, boolean useComplexity) {
@@ -944,6 +947,14 @@ public class Avatar {
     }
 
     private static final PartCustomization PIVOT_PART_RENDERING_CUSTOMIZATION = new PartCustomization();
+    public synchronized boolean hasPivotPart(ParentType parent) {
+        if (renderer == null || !loaded || !parent.isPivot)
+            return false;
+
+        Queue<Pair<FiguraMat4, FiguraMat3>> queue = renderer.pivotCustomizations.get(parent);
+        return queue != null && !queue.isEmpty();
+    }
+
     public synchronized boolean pivotPartRender(ParentType parent, Consumer<PoseStack> consumer) {
         if (renderer == null || !loaded || !parent.isPivot)
             return false;
@@ -1022,7 +1033,7 @@ public class Avatar {
      * closes the native texture resources.
      * also closes and stops this avatar sounds
      */
-    public void clean() {
+    public synchronized void clean() {
         if (renderer != null) {
             renderer.invalidate();
             renderer = null;
@@ -1218,22 +1229,33 @@ public class Avatar {
     }
 
     public FiguraTexture registerTexture(String name, NativeImage image, boolean ignoreSize) {
+        FiguraRenderer renderer = this.renderer;
+        if (renderer == null) {
+            image.close();
+            throw new LuaError("Avatar have no active renderer!");
+        }
+
         int max = permissions.get(Permissions.TEXTURE_SIZE);
         if (!ignoreSize && (image.getWidth() > max || image.getHeight() > max)) {
+            image.close();
             noPermissions.add(Permissions.TEXTURE_SIZE);
             throw new LuaError("Texture exceeded max size of " + max + " x " + max + " resolution, got " + image.getWidth() + " x " + image.getHeight());
         }
 
-        FiguraTexture oldText = renderer.customTextures.get(name);
-        if (oldText != null)
-            oldText.close();
+        synchronized (renderer) {
+            FiguraTexture oldText = renderer.customTextures.get(name);
+            if (oldText != null)
+                oldText.close();
 
-        if (renderer.customTextures.size() > TextureAPI.TEXTURE_LIMIT)
-            throw new LuaError("Maximum amount of textures reached!");
+            if (renderer.customTextures.size() > TextureAPI.TEXTURE_LIMIT) {
+                image.close();
+                throw new LuaError("Maximum amount of textures reached!");
+            }
 
-        FiguraTexture texture = new FiguraTexture(this, name, image);
-        renderer.customTextures.put(name, texture);
-        return texture;
+            FiguraTexture texture = new FiguraTexture(this, name, image);
+            renderer.customTextures.put(name, texture);
+            return texture;
+        }
     }
 
     public static class Instructions {

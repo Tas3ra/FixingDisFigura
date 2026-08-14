@@ -57,14 +57,14 @@ public class ModelFeatureRendererMixin {
                                             OutlineBufferSource outlineBufferSource, MultiBufferSource.BufferSource bufferSource, CallbackInfo ci) {
         FiguraSubmitCallBackExtension callBackExtension = (FiguraSubmitCallBackExtension) (Object) modelSubmit;
 
-        for (var callback : callBackExtension.figura$getPreRenderingCallbacks()) {
+        for (var callback : new ArrayList<>(callBackExtension.figura$getPreRenderingCallbacks())) {
             if (!callback.apply(bufferSource, poseStack)) {
                 ci.cancel();
             }
         }
 
         if (ci.isCancelled()) {
-            for (var callback : callBackExtension.figura$getPostRenderingCallbacks())
+            for (var callback : new ArrayList<>(callBackExtension.figura$getPostRenderingCallbacks()))
                 callback.run();
 
             callBackExtension.figura$getPostRenderingCallbacks().clear();
@@ -77,7 +77,7 @@ public class ModelFeatureRendererMixin {
     private <S> void figura$postRender(SubmitNodeStorage.ModelSubmit<S> modelSubmit, RenderType renderType, VertexConsumer vertexConsumer,
                                       OutlineBufferSource outlineBufferSource, MultiBufferSource.BufferSource bufferSource, CallbackInfo ci) {
         FiguraSubmitCallBackExtension callBackExtension = (FiguraSubmitCallBackExtension) (Object) modelSubmit;
-        for (var callback : callBackExtension.figura$getPostRenderingCallbacks())
+        for (var callback : new ArrayList<>(callBackExtension.figura$getPostRenderingCallbacks()))
             callback.run();
 
         callBackExtension.figura$getPostRenderingCallbacks().clear();

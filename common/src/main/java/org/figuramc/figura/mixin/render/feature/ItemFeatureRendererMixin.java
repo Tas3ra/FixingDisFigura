@@ -15,6 +15,8 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import java.util.ArrayList;
+
 @Mixin(ItemFeatureRenderer.class)
 public class ItemFeatureRendererMixin {
 
@@ -27,14 +29,14 @@ public class ItemFeatureRendererMixin {
                                   OutlineBufferSource outlineBufferSource, CallbackInfo ci, @Local SubmitNodeStorage.ItemSubmit itemSubmit) {
         FiguraSubmitCallBackExtension callBackExtension = (FiguraSubmitCallBackExtension) (Object) itemSubmit;
 
-        for (var callback : callBackExtension.figura$getPreRenderingCallbacks()) {
+        for (var callback : new ArrayList<>(callBackExtension.figura$getPreRenderingCallbacks())) {
             if (!callback.apply(bufferSource, poseStack)) {
                 ci.cancel();
             }
         }
 
         if (ci.isCancelled()) {
-            for (var callback : callBackExtension.figura$getPostRenderingCallbacks())
+            for (var callback : new ArrayList<>(callBackExtension.figura$getPostRenderingCallbacks()))
                 callback.run();
 
             callBackExtension.figura$getPostRenderingCallbacks().clear();
@@ -45,9 +47,9 @@ public class ItemFeatureRendererMixin {
 
     @Inject(method = "render", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/entity/ItemRenderer;renderItem(Lnet/minecraft/world/item/ItemDisplayContext;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;II[ILjava/util/List;Lnet/minecraft/client/renderer/rendertype/RenderType;Lnet/minecraft/client/renderer/item/ItemStackRenderState$FoilType;)V", ordinal = 0, shift = At.Shift.AFTER))
     private <S> void figura$postRender(SubmitNodeCollection submitNodeCollection, MultiBufferSource.BufferSource bufferSource,
-                                       OutlineBufferSource outlineBufferSource, CallbackInfo ci, @Local SubmitNodeStorage.ItemSubmit itemSubmit) {
+        OutlineBufferSource outlineBufferSource, CallbackInfo ci, @Local SubmitNodeStorage.ItemSubmit itemSubmit) {
         FiguraSubmitCallBackExtension callBackExtension = (FiguraSubmitCallBackExtension) (Object) itemSubmit;
-        for (var callback : callBackExtension.figura$getPostRenderingCallbacks())
+        for (var callback : new ArrayList<>(callBackExtension.figura$getPostRenderingCallbacks()))
             callback.run();
     }
 }

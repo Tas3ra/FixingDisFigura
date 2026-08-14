@@ -37,7 +37,7 @@ public class TextUtils {
     public static final Component TAB = FiguraText.of("tab");
     public static final Component ELLIPSIS = FiguraText.of("ellipsis");
     public static final Component UNKNOWN = Component.literal("�").withStyle(Style.EMPTY);
-    private static final String LINE_SEPARATOR_REGEX = "\\r\\n|\\n|\\r|\\\\r\\\\n|\\\\n|\\\\r";
+    private static final String LINE_SEPARATOR_REGEX = "\\r\\n|\\n|\\r|\\x{0085}|\\x{2028}|\\x{2029}|\\\\r\\\\n|\\\\n|\\\\r|\\\\u000[Dd]\\\\u000[Aa]|\\\\u000[Aa]|\\\\u000[Dd]|\\x{240D}\\x{240A}|\\x{240A}|\\x{240D}|\\x{2424}";
 
     public static boolean allowScriptEvents;
 
@@ -52,6 +52,16 @@ public class TextUtils {
             return Optional.empty();
         }, Style.EMPTY);
         return ret;
+    }
+
+    public static boolean isLineSeparatorCodePoint(int codePoint) {
+        return codePoint == '\n' || codePoint == '\r' || codePoint == 0x85 || codePoint == 0x2028 ||
+                codePoint == 0x2029 || codePoint == 0x240A || codePoint == 0x240D || codePoint == 0x2424;
+    }
+
+    public static FormattedCharSequence stripLineSeparatorGlyphs(FormattedCharSequence text) {
+        return sink -> text.accept((index, style, codePoint) ->
+                isLineSeparatorCodePoint(codePoint) || sink.accept(index, style, codePoint));
     }
 
     public static List<Component> splitText(FormattedText text, String regex) {
@@ -434,7 +444,16 @@ public class TextUtils {
 
     public static List<FormattedCharSequence> wrapText(FormattedText text, int width, Font font) {
         List<FormattedCharSequence> warp = new ArrayList<>();
-        font.getSplitter().splitLines(text, width, Style.EMPTY, (formattedText, aBoolean) -> warp.add(Language.getInstance().getVisualOrder(formattedText)));
+        for (Component line : splitLines(text)) {
+            List<FormattedText> wrapped = font.getSplitter().splitLines(line, width, Style.EMPTY);
+            if (wrapped.isEmpty()) {
+                warp.add(Language.getInstance().getVisualOrder(line));
+                continue;
+            }
+
+            for (FormattedText formattedText : wrapped)
+                warp.add(Language.getInstance().getVisualOrder(formattedText));
+        }
         return warp;
     }
 

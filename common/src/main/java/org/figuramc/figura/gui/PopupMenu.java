@@ -16,6 +16,7 @@ import net.minecraft.network.chat.FontDescription;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.Vec3;
 import org.figuramc.figura.FiguraMod;
 import org.figuramc.figura.avatar.Avatar;
 import org.figuramc.figura.avatar.AvatarManager;
@@ -77,32 +78,47 @@ public class PopupMenu {
     private static boolean enabled = false;
     private static Entity entity;
     private static UUID id;
+    private static Component targetName;
+    private static Vec3 targetPos;
 
     public static void render(GuiGraphics gui) {
         if (!isEnabled()) return;
 
-        if (entity == null) {
-            id = null;
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            clearTarget();
             return;
         }
 
-        id = entity.getUUID();
-        Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.player == null || (entity.isInvisibleTo(minecraft.player) && entity != minecraft.player)) {
-            entity = null;
-            id = null;
+        UUID renderId = id;
+        Component renderName = targetName;
+        Vec3 renderPos = targetPos;
+
+        if (entity != null) {
+            renderId = entity.getUUID();
+            renderName = entity.getName().copy();
+            renderPos = entity.getPosition(minecraft.getDeltaTracker().getGameTimeDeltaPartialTick(false))
+                    .add(0f, entity.getBbHeight() + 0.1f, 0f);
+
+            if (entity.isInvisibleTo(minecraft.player) && entity != minecraft.player) {
+                clearTarget();
+                return;
+            }
+        }
+
+        if (renderId == null || renderName == null || renderPos == null) {
+            clearTarget();
             return;
         }
+
+        id = renderId;
 
         GlStateManager._disableDepthTest();
         Matrix3x2fStack pose = gui.pose();
         pose.pushMatrix();
 
         // world to screen space
-        FiguraVec3 worldPos = FiguraVec3.fromVec3(entity.getPosition(minecraft.getDeltaTracker().getGameTimeDeltaPartialTick(false)));
-        worldPos.add(0f, entity.getBbHeight() + 0.1f, 0f);
-
-        FiguraVec4 vec = MathUtils.worldToScreenSpace(worldPos);
+        FiguraVec4 vec = MathUtils.worldToScreenSpace(FiguraVec3.fromVec3(renderPos));
         if (vec.z < 1) return; // too close
 
         Window window = minecraft.getWindow();
@@ -134,7 +150,7 @@ public class PopupMenu {
         PermissionPack tc = PermissionManager.get(id);
         MutableComponent permissionName = tc.getCategoryName().append(tc.hasChanges() ? "*" : "");
 
-        MutableComponent name = entity.getName().copy();
+        MutableComponent name = renderName.copy();
 
         boolean error = false;
         boolean version = false;
@@ -185,8 +201,7 @@ public class PopupMenu {
             BUTTONS.get(index).getSecond().accept(id);
 
         enabled = false;
-        entity = null;
-        id = null;
+        clearTarget();
         index = 0;
     }
 
@@ -199,14 +214,31 @@ public class PopupMenu {
     }
 
     public static boolean hasEntity() {
-        return entity != null;
+        return entity != null || (id != null && targetName != null && targetPos != null);
     }
 
     public static void setEntity(Entity entity) {
         PopupMenu.entity = entity;
+        PopupMenu.id = entity == null ? null : entity.getUUID();
+        PopupMenu.targetName = null;
+        PopupMenu.targetPos = null;
+    }
+
+    public static void setProfileTarget(UUID id, Component name, Vec3 pos) {
+        PopupMenu.entity = null;
+        PopupMenu.id = id;
+        PopupMenu.targetName = name;
+        PopupMenu.targetPos = pos;
     }
 
     public static UUID getEntityId() {
         return id;
+    }
+
+    private static void clearTarget() {
+        entity = null;
+        id = null;
+        targetName = null;
+        targetPos = null;
     }
 }

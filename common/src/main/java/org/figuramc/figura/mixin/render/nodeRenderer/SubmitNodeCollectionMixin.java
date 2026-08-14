@@ -29,11 +29,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 @Mixin(SubmitNodeCollection.class)
 public class SubmitNodeCollectionMixin implements NodeCollectorExtension {
     @Unique
-    List<FiguraSubmission<?>> figuraSubmissions = new ArrayList<>();
+    List<FiguraSubmission<?>> figuraSubmissions = new CopyOnWriteArrayList<>();
 
     public <S extends EntityRenderState> void submitFiguraModel(Avatar avatar, S renderState, TriFunction<Avatar, S, MultiBufferSource, Void> renderer) {
         figuraSubmissions.add(new FiguraSubmission<>(avatar, renderState, renderer));
@@ -48,10 +49,10 @@ public class SubmitNodeCollectionMixin implements NodeCollectorExtension {
     private <S> void figura$onSubmitModel(Model<? super S> model, S object, PoseStack poseStack, RenderType renderType, int i, int j, int k, @Nullable TextureAtlasSprite textureAtlasSprite, int l, @Nullable ModelFeatureRenderer.CrumblingOverlay crumblingOverlay, CallbackInfo ci, @Local SubmitNodeStorage.ModelSubmit<S> modelSubmit) {
         FiguraSubmitCallBackExtension modelSubmissionExtension = (FiguraSubmitCallBackExtension) (Object) modelSubmit;
         FiguraSubmitCallBackExtension modelExtension = (FiguraSubmitCallBackExtension) model;
-        for (var callback : modelExtension.figura$getPreRenderingCallbacks()) {
+        for (var callback : new ArrayList<>(modelExtension.figura$getPreRenderingCallbacks())) {
             modelSubmissionExtension.figura$addPreRenderingCallback(callback);
         }
-        for (var callback : modelExtension.figura$getPostRenderingCallbacks()) {
+        for (var callback : new ArrayList<>(modelExtension.figura$getPostRenderingCallbacks())) {
             modelSubmissionExtension.figura$addPostRenderingCallback(callback);
         }
         modelSubmissionExtension.figura$setPreventAnimSetup(modelExtension.figura$getPreventAnimSetup());
@@ -64,10 +65,10 @@ public class SubmitNodeCollectionMixin implements NodeCollectorExtension {
     private void figura$onSubmitModelPart(ModelPartFeatureRenderer.Storage instance, RenderType key, SubmitNodeStorage.ModelPartSubmit modelPartSubmit, Operation<Void> original) {
         FiguraSubmitCallBackExtension modelSubmissionExtension = (FiguraSubmitCallBackExtension) (Object) modelPartSubmit;
         FiguraSubmitCallBackExtension modelExtension = (FiguraSubmitCallBackExtension) (Object) modelPartSubmit.modelPart();
-        for (var callback : modelExtension.figura$getPreRenderingCallbacks()) {
+        for (var callback : new ArrayList<>(modelExtension.figura$getPreRenderingCallbacks())) {
             modelSubmissionExtension.figura$addPreRenderingCallback(callback);
         }
-        for (var callback : modelExtension.figura$getPostRenderingCallbacks()) {
+        for (var callback : new ArrayList<>(modelExtension.figura$getPostRenderingCallbacks())) {
             modelSubmissionExtension.figura$addPostRenderingCallback(callback);
         }
         modelSubmissionExtension.figura$setPreventAnimSetup(modelExtension.figura$getPreventAnimSetup());
@@ -84,10 +85,10 @@ public class SubmitNodeCollectionMixin implements NodeCollectorExtension {
         FiguraSubmitCallBackExtension itemSubmissionExtension = (FiguraSubmitCallBackExtension) (Object) itemSubmit;
 
         FiguraSubmitCallBackExtension displayContextExtension = (FiguraSubmitCallBackExtension) (Object) itemSubmit.displayContext();
-        for (var callback : displayContextExtension.figura$getPreRenderingCallbacks()) {
+        for (var callback : new ArrayList<>(displayContextExtension.figura$getPreRenderingCallbacks())) {
             itemSubmissionExtension.figura$addPreRenderingCallback(callback);
         }
-        for (var callback : displayContextExtension.figura$getPostRenderingCallbacks()) {
+        for (var callback : new ArrayList<>(displayContextExtension.figura$getPostRenderingCallbacks())) {
             itemSubmissionExtension.figura$addPostRenderingCallback(callback);
         }
         itemSubmissionExtension.figura$setPreventAnimSetup(displayContextExtension.figura$getPreventAnimSetup());

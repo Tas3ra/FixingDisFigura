@@ -25,6 +25,7 @@ import org.figuramc.figura.model.rendering.texture.FiguraTexture;
 import org.figuramc.figura.model.rendering.texture.FiguraTextureSet;
 import org.figuramc.figura.model.rendertasks.RenderTask;
 import org.figuramc.figura.utils.ColorUtils;
+import org.figuramc.figura.utils.TextRenderUtils;
 import org.figuramc.figura.utils.ui.UIHelper;
 
 import java.util.*;
@@ -117,6 +118,7 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
     protected int commonRender(double vertOffset) {
         // flag rendering state
         this.isRendering = true;
+        boolean immediateTextTaskLayer = bufferSource instanceof MultiBufferSource.BufferSource && TextRenderUtils.beginImmediateTextTaskLayer();
 
         // iris fix
         int irisConfig = UIHelper.paperdoll || !ClientAPI.hasShaderPackMod() ? 0 : Configs.IRIS_COMPATIBILITY_FIX.value;
@@ -191,9 +193,13 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
             FiguraMod.popPushProfiler("secondary");
             VERTEX_BUFFER.consume(false, bufferSource);
             FiguraMod.popProfiler(2);
+            if (immediateTextTaskLayer)
+                TextRenderUtils.renderImmediateTextTaskLayer((MultiBufferSource.BufferSource) bufferSource);
 
             // finish rendering
             checkEmpty();
+        } else if (immediateTextTaskLayer) {
+            TextRenderUtils.renderImmediateTextTaskLayer((MultiBufferSource.BufferSource) bufferSource);
         }
 
         this.isRendering = false;
@@ -366,7 +372,7 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
                             continue;
                         int neededComplexity = task.getComplexity();
                         if (neededComplexity > remainingComplexity[0])
-                            break;
+                            continue;
                         FiguraMod.pushProfiler(task.getName());
                         task.render(customizationStack, bufferSource, light, overlay);
                         remainingComplexity[0] -= neededComplexity;
@@ -442,7 +448,7 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
                         continue;
                     int neededComplexity = task.getComplexity();
                     if (neededComplexity > remainingComplexity[0])
-                        break;
+                        continue;
                     FiguraMod.pushProfiler(task.getName());
                     remainingComplexity[0] -= neededComplexity;
                     FiguraMod.popProfiler();
@@ -504,30 +510,43 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
         float j = (float)x2;
         float k = (float)y2;
         float l = (float)z2;
-        vertices.addVertex(pose, f, h, i).setColor(r, g, b, a).setNormal(pose, 1.0F, 0.0F, 0.0F);
-        vertices.addVertex(pose, j, h, i).setColor(r, g, b, a).setNormal(pose, 1.0F, 0.0F, 0.0F);
-        vertices.addVertex(pose, f, h, i).setColor(r, g, b, a).setNormal(pose, 0.0F, 1.0F, 0.0F);
-        vertices.addVertex(pose, f, k, i).setColor(r, g, b, a).setNormal(pose, 0.0F, 1.0F, 0.0F);
-        vertices.addVertex(pose, f, h, i).setColor(r, g, b, a).setNormal(pose, 0.0F, 0.0F, 1.0F);
-        vertices.addVertex(pose, f, h, l).setColor(r, g, b, a).setNormal(pose, 0.0F, 0.0F, 1.0F);
-        vertices.addVertex(pose, j, h, i).setColor(r, g, b, a).setNormal(pose, 0.0F, 1.0F, 0.0F);
-        vertices.addVertex(pose, j, k, i).setColor(r, g, b, a).setNormal(pose, 0.0F, 1.0F, 0.0F);
-        vertices.addVertex(pose, j, k, i).setColor(r, g, b, a).setNormal(pose, -1.0F, 0.0F, 0.0F);
-        vertices.addVertex(pose, f, k, i).setColor(r, g, b, a).setNormal(pose, -1.0F, 0.0F, 0.0F);
-        vertices.addVertex(pose, f, k, i).setColor(r, g, b, a).setNormal(pose, 0.0F, 0.0F, 1.0F);
-        vertices.addVertex(pose, f, k, l).setColor(r, g, b, a).setNormal(pose, 0.0F, 0.0F, 1.0F);
-        vertices.addVertex(pose, f, k, l).setColor(r, g, b, a).setNormal(pose, 0.0F, -1.0F, 0.0F);
-        vertices.addVertex(pose, f, h, l).setColor(r, g, b, a).setNormal(pose, 0.0F, -1.0F, 0.0F);
-        vertices.addVertex(pose, f, h, l).setColor(r, g, b, a).setNormal(pose, 1.0F, 0.0F, 0.0F);
-        vertices.addVertex(pose, j, h, l).setColor(r, g, b, a).setNormal(pose, 1.0F, 0.0F, 0.0F);
-        vertices.addVertex(pose, j, h, l).setColor(r, g, b, a).setNormal(pose, 0.0F, 0.0F, -1.0F);
-        vertices.addVertex(pose, j, h, i).setColor(r, g, b, a).setNormal(pose, 0.0F, 0.0F, -1.0F);
-        vertices.addVertex(pose, f, k, l).setColor(r, g, b, a).setNormal(pose, 1.0F, 0.0F, 0.0F);
-        vertices.addVertex(pose, j, k, l).setColor(r, g, b, a).setNormal(pose, 1.0F, 0.0F, 0.0F);
-        vertices.addVertex(pose, j, h, l).setColor(r, g, b, a).setNormal(pose, 0.0F, 1.0F, 0.0F);
-        vertices.addVertex(pose, j, k, l).setColor(r, g, b, a).setNormal(pose, 0.0F, 1.0F, 0.0F);
-        vertices.addVertex(pose, j, k, i).setColor(r, g, b, a).setNormal(pose, 0.0F, 0.0F, 1.0F);
-        vertices.addVertex(pose, j, k, l).setColor(r, g, b, a).setNormal(pose, 0.0F, 0.0F, 1.0F);
+        float lineWidth = figura$getLineWidth();
+        addLineVertex(pose, vertices, f, h, i, r, g, b, a, 1.0F, 0.0F, 0.0F, lineWidth);
+        addLineVertex(pose, vertices, j, h, i, r, g, b, a, 1.0F, 0.0F, 0.0F, lineWidth);
+        addLineVertex(pose, vertices, f, h, i, r, g, b, a, 0.0F, 1.0F, 0.0F, lineWidth);
+        addLineVertex(pose, vertices, f, k, i, r, g, b, a, 0.0F, 1.0F, 0.0F, lineWidth);
+        addLineVertex(pose, vertices, f, h, i, r, g, b, a, 0.0F, 0.0F, 1.0F, lineWidth);
+        addLineVertex(pose, vertices, f, h, l, r, g, b, a, 0.0F, 0.0F, 1.0F, lineWidth);
+        addLineVertex(pose, vertices, j, h, i, r, g, b, a, 0.0F, 1.0F, 0.0F, lineWidth);
+        addLineVertex(pose, vertices, j, k, i, r, g, b, a, 0.0F, 1.0F, 0.0F, lineWidth);
+        addLineVertex(pose, vertices, j, k, i, r, g, b, a, -1.0F, 0.0F, 0.0F, lineWidth);
+        addLineVertex(pose, vertices, f, k, i, r, g, b, a, -1.0F, 0.0F, 0.0F, lineWidth);
+        addLineVertex(pose, vertices, f, k, i, r, g, b, a, 0.0F, 0.0F, 1.0F, lineWidth);
+        addLineVertex(pose, vertices, f, k, l, r, g, b, a, 0.0F, 0.0F, 1.0F, lineWidth);
+        addLineVertex(pose, vertices, f, k, l, r, g, b, a, 0.0F, -1.0F, 0.0F, lineWidth);
+        addLineVertex(pose, vertices, f, h, l, r, g, b, a, 0.0F, -1.0F, 0.0F, lineWidth);
+        addLineVertex(pose, vertices, f, h, l, r, g, b, a, 1.0F, 0.0F, 0.0F, lineWidth);
+        addLineVertex(pose, vertices, j, h, l, r, g, b, a, 1.0F, 0.0F, 0.0F, lineWidth);
+        addLineVertex(pose, vertices, j, h, l, r, g, b, a, 0.0F, 0.0F, -1.0F, lineWidth);
+        addLineVertex(pose, vertices, j, h, i, r, g, b, a, 0.0F, 0.0F, -1.0F, lineWidth);
+        addLineVertex(pose, vertices, f, k, l, r, g, b, a, 1.0F, 0.0F, 0.0F, lineWidth);
+        addLineVertex(pose, vertices, j, k, l, r, g, b, a, 1.0F, 0.0F, 0.0F, lineWidth);
+        addLineVertex(pose, vertices, j, h, l, r, g, b, a, 0.0F, 1.0F, 0.0F, lineWidth);
+        addLineVertex(pose, vertices, j, k, l, r, g, b, a, 0.0F, 1.0F, 0.0F, lineWidth);
+        addLineVertex(pose, vertices, j, k, i, r, g, b, a, 0.0F, 0.0F, 1.0F, lineWidth);
+        addLineVertex(pose, vertices, j, k, l, r, g, b, a, 0.0F, 0.0F, 1.0F, lineWidth);
+    }
+
+    private static void addLineVertex(PoseStack.Pose pose, VertexConsumer vertices, float x, float y, float z, float r, float g, float b, float a, float nx, float ny, float nz, float lineWidth) {
+        vertices.addVertex(pose, x, y, z)
+                .setColor(r, g, b, a)
+                .setNormal(pose, nx, ny, nz)
+                .setLineWidth(lineWidth);
+    }
+
+    private static float figura$getLineWidth() {
+        float lineWidth = Minecraft.getInstance().getWindow().getAppropriateLineWidth();
+        return Float.isFinite(lineWidth) && lineWidth > 0f ? lineWidth : 1f;
     }
 
     protected void savePivotTransform(ParentType parentType, PartCustomization customization) {
@@ -659,6 +678,10 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
         if (types == null)
             return ret;
 
+        ret.fullBright = types.isFullBright();
+        if (types == FiguraRenderTypes.LINES || types == FiguraRenderTypes.LINES_STRIP)
+            ret.lineWidth = figura$getLineWidth();
+
         if (offsetRenderLayers && !primary && types.isOffset())
             ret.vertexOffset = FiguraMod.VERTEX_OFFSET;
 
@@ -698,13 +721,15 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
                 uv.divide(uvFixer);
                 uv.transform(customization.uvMatrix);
 
-                vertexConsumer
+                VertexConsumer consumer = vertexConsumer
                         .addVertex((float) pos.x, (float) pos.y, (float) pos.z)
                         .setColor((float) vertexData.color.x, (float) vertexData.color.y, (float) vertexData.color.z, customization.alpha)
                         .setUv((float) uv.x, (float) uv.y)
                         .setOverlay(overlay)
                         .setLight(light)
                         .setNormal((float) normal.x, (float) normal.y, (float) normal.z);
+                if (vertexData.lineWidth > 0f)
+                    consumer.setLineWidth(vertexData.lineWidth);
             }
         });
     }
@@ -713,6 +738,7 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
         public RenderType renderType;
         public boolean fullBright;
         public float vertexOffset;
+        public float lineWidth;
         public FiguraVec3 color;
         public boolean primary;
     }

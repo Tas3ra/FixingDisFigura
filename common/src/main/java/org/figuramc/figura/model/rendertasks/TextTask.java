@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.network.chat.Component;
@@ -19,6 +20,8 @@ import org.figuramc.figura.lua.docs.LuaTypeDoc;
 import org.figuramc.figura.math.vector.FiguraVec3;
 import org.figuramc.figura.math.vector.FiguraVec4;
 import org.figuramc.figura.model.FiguraModelPart;
+import org.figuramc.figura.model.PartCustomization;
+import org.figuramc.figura.model.rendering.texture.FiguraRenderTypes;
 import org.figuramc.figura.utils.ColorUtils;
 import org.figuramc.figura.utils.LuaUtils;
 import org.figuramc.figura.utils.TextRenderUtils;
@@ -50,6 +53,18 @@ public class TextTask extends RenderTask {
 
     public TextTask(String name, Avatar owner, FiguraModelPart parent) {
         super(name, owner, parent);
+    }
+
+    @Override
+    public void render(PartCustomization.PartCustomizationStack stack, MultiBufferSource buffer, int light, int overlay) {
+        customization.recalculate();
+        FiguraRenderTypes parentPrimaryRenderType = stack.peek().getPrimaryRenderType();
+        boolean inheritFullBright = customization.light == null && parentPrimaryRenderType != null && parentPrimaryRenderType.isFullBright();
+
+        stack.push(customization);
+        PoseStack poseStack = stack.peek().copyIntoGlobalPoseStack();
+        render(poseStack, buffer, inheritFullBright ? LightTexture.FULL_BRIGHT : light, overlay);
+        stack.pop();
     }
 
     @Override

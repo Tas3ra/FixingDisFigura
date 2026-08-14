@@ -8,12 +8,14 @@ import it.unimi.dsi.fastutil.ints.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.entity.state.AvatarRenderState;
 import net.minecraft.client.renderer.entity.state.EntityRenderState;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ResolvableProfile;
 import org.figuramc.figura.FiguraMod;
 import org.figuramc.figura.avatar.local.LocalAvatarLoader;
@@ -157,10 +159,58 @@ public class AvatarManager {
     }
 
     public static Avatar getAvatarForProfile(ResolvableProfile profile) {
-        if (profile == null || profile.partialProfile() == null || profile.partialProfile().id() == null)
+        UUID id = getIdForProfile(profile);
+        if (id == null)
             return null;
 
-        return getAvatarForPlayer(profile.partialProfile().id());
+        return getAvatarForPlayer(id);
+    }
+
+    public static Avatar getAvatarForItem(ItemStack stack) {
+        if (stack == null || stack.isEmpty())
+            return null;
+
+        Avatar avatar = getAvatarForProfile(stack.get(DataComponents.PROFILE));
+        if (avatar != null)
+            return avatar;
+
+        Component customName = stack.get(DataComponents.CUSTOM_NAME);
+        return customName == null ? null : getAvatarForName(customName.getString());
+    }
+
+    public static UUID getIdForProfile(ResolvableProfile profile) {
+        if (profile == null || profile.partialProfile() == null)
+            return null;
+
+        UUID id = profile.partialProfile().id();
+        if (id != null)
+            return id;
+
+        String name = profile.partialProfile().name();
+        if ((name == null || name.isBlank()) && profile.name().isPresent())
+            name = profile.name().get();
+
+        return getIdForName(name);
+    }
+
+    public static UUID getIdForName(String name) {
+        if (name == null || name.isBlank())
+            return null;
+
+        if (Minecraft.getInstance().player != null && name.equalsIgnoreCase(Minecraft.getInstance().player.getName().getString()))
+            return Minecraft.getInstance().player.getUUID();
+
+        for (Map.Entry<String, UUID> entry : EntityUtils.getPlayerList().entrySet()) {
+            if (entry.getKey().equalsIgnoreCase(name))
+                return entry.getValue();
+        }
+
+        return null;
+    }
+
+    public static Avatar getAvatarForName(String name) {
+        UUID id = getIdForName(name);
+        return id == null ? null : getAvatarForPlayer(id);
     }
 
     public static Entity getCachedEntity(int entityId) {

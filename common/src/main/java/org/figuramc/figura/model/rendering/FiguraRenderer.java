@@ -26,8 +26,10 @@ import org.joml.Quaternionf;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
@@ -141,13 +143,17 @@ public abstract class FiguraRenderer {
     public abstract int renderSpecialParts();
     public abstract void updateMatrices();
 
-    protected void clean() {
-        for (FiguraTextureSet set : textureSets)
-            set.clean();
-        for (FiguraTexture texture : textures.values())
-            texture.closeFromRenderThread();
-        for (FiguraTexture texture : customTextures.values())
-            texture.close();
+    protected synchronized void clean() {
+        Set<FiguraTexture> texturesToCloseFromRenderThread = new LinkedHashSet<>(textures.values());
+        for (FiguraTextureSet set : textureSets) {
+            for (FiguraTexture texture : set.textures) {
+                if (texture != null)
+                    texturesToCloseFromRenderThread.add(texture);
+            }
+        }
+
+        List<FiguraTexture> customTexturesToClose = new ArrayList<>(customTextures.values());
+
         textureSets.clear();
         textures.clear();
         customTextures.clear();
@@ -157,9 +163,15 @@ public abstract class FiguraRenderer {
         entity = null;
         bufferSource = null;
         itemToRender = null;
+        dirty = false;
+
+        for (FiguraTexture texture : texturesToCloseFromRenderThread)
+            texture.closeFromRenderThread();
+        for (FiguraTexture texture : customTexturesToClose)
+            texture.close();
     }
 
-    public void invalidate() {
+    public synchronized void invalidate() {
         this.dirty = true;
         if (!this.isRendering)
             clean();
