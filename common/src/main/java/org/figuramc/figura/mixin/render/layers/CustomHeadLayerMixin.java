@@ -36,7 +36,9 @@ import org.figuramc.figura.ducks.SkullBlockRendererHelper;
 import org.figuramc.figura.lua.api.world.ItemStackAPI;
 import org.figuramc.figura.math.vector.FiguraVec3;
 import org.figuramc.figura.model.ParentType;
+import org.figuramc.figura.model.rendering.EntityRenderMode;
 import org.figuramc.figura.utils.RenderUtils;
+import org.figuramc.figura.utils.ui.UIHelper;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -95,7 +97,7 @@ public abstract class CustomHeadLayerMixin<S extends LivingEntityRenderState, M 
             // render!!
             if (localAvatar.pivotPartRender(ParentType.HelmetItemPivot, stack -> {
                 float s = 19f;
-                stack.scale(s, -s, -s);
+                stack.scale(s, s, s);
                 stack.translate(-0.5d, 0d, -0.5d);
 
                 // set item context
@@ -103,11 +105,12 @@ public abstract class CustomHeadLayerMixin<S extends LivingEntityRenderState, M 
                 SkullBlockRendererHelper.clear();
                 SkullBlockRendererAccessor.setItem(itemStack);
                 SkullBlockRendererHelper.setAvatar(AvatarManager.getAvatarForItem(itemStack));
+                figura$setHeadEntityRenderMode(localAvatar);
                 Integer id = ((FiguraEntityRenderStateExtension)entityState).figura$getEntityId();
                 if (id != null && Minecraft.getInstance().level != null)
                     SkullBlockRendererAccessor.setEntity(Minecraft.getInstance().level.getEntity(id));
                 SkullBlockRendererAccessor.setRenderMode(SkullBlockRendererAccessor.SkullRenderMode.HEAD);
-                SkullBlockRenderer.submitSkull(null, 180f, entityState.wornHeadAnimationPos, stack, submitNodeCollector, i, skullModelBase,
+                SkullBlockRenderer.submitSkull(null, 0f, entityState.wornHeadAnimationPos, stack, submitNodeCollector, i, skullModelBase,
                         renderType, entityState.outlineColor, null);
             })) {
                 avatar = null;
@@ -144,10 +147,21 @@ public abstract class CustomHeadLayerMixin<S extends LivingEntityRenderState, M 
         if (stack == null) return;
         SkullBlockRendererAccessor.setItem(stack);
         SkullBlockRendererHelper.setAvatar(AvatarManager.getAvatarForItem(stack));
+        Avatar wearerAvatar = AvatarManager.getAvatar(livingEntityRenderState);
+        figura$setHeadEntityRenderMode(wearerAvatar);
         Integer id = ((FiguraEntityRenderStateExtension)livingEntityRenderState).figura$getEntityId();
         if (id != null && Minecraft.getInstance().level != null && Minecraft.getInstance().level.getEntity(id) != null)
             SkullBlockRendererAccessor.setEntity(Minecraft.getInstance().level.getEntity(id));
         SkullBlockRendererAccessor.setRenderMode(SkullBlockRendererAccessor.SkullRenderMode.HEAD);
+    }
+
+    @Unique
+    private static void figura$setHeadEntityRenderMode(Avatar wearerAvatar) {
+        if (wearerAvatar != null && wearerAvatar.renderMode != EntityRenderMode.OTHER) {
+            SkullBlockRendererAccessor.setEntityRenderMode(wearerAvatar.renderMode);
+        } else if (UIHelper.paperdoll) {
+            SkullBlockRendererAccessor.setEntityRenderMode(EntityRenderMode.MINECRAFT_GUI);
+        }
     }
 
     @Inject(at = @At("RETURN"), method = "submit(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;ILnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;FF)V")

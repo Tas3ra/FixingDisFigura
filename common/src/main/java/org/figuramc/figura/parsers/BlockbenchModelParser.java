@@ -26,12 +26,14 @@ public class BlockbenchModelParser {
     //offsets for usage of diverse models
     private int textureOffset = 0;
     private int animationOffset = 0;
+    private boolean modernKeyframeDirections = false;
 
     //used during the parser
     private final HashMap<String, CompoundTag> elementMap = new HashMap<>();
     private final HashMap<String, ListTag> animationMap = new HashMap<>();
     private final HashMap<String, TextureData> textureMap = new HashMap<>();
     private final HashMap<Integer, String> textureIdMap = new HashMap<>();
+    private final HashMap<String, BlockbenchModel.GroupElement> groupMap = new HashMap<>();
 
     //parser
     public ModelData parseModel(Path avatarFolder, Path sourceFile, String json, String modelName, String folders) throws Exception {
@@ -41,8 +43,10 @@ public class BlockbenchModelParser {
         //meta check
         if (!model.meta.model_format.equals("free") && !model.meta.model_format.contains(FiguraMod.MOD_ID))
             throw new Exception("Model \"" + modelName + "\" have an incompatible model format. Compatibility is limited to \"Generic Model\" format and third-party " + FiguraMod.MOD_NAME + " specific formats");
-        if (Integer.parseInt(model.meta.format_version.split("\\.")[0]) < 4)
+        int formatVersion = Integer.parseInt(model.meta.format_version.split("\\.")[0]);
+        if (formatVersion < 4)
             throw new Exception("Model \"" + modelName + "\" was created using a version too old (" + model.meta.format_version + ") of Blockbench. Minimum compatible version is 4.0");
+        modernKeyframeDirections = formatVersion >= 5;
 
         //return lists
         CompoundTag textures = new CompoundTag();
@@ -66,6 +70,7 @@ public class BlockbenchModelParser {
         //parse animations
         //add the animation metadata to the animation list
         //but return a map with the group animation, as we will store it on the groups themselves
+        parseGroups(model.groups);
         parseAnimations(animationList, model.animations, modelName, folders);
 
         //add and parse the outliner
@@ -76,6 +81,8 @@ public class BlockbenchModelParser {
         animationMap.clear();
         textureMap.clear();
         textureIdMap.clear();
+        groupMap.clear();
+        modernKeyframeDirections = false;
 
         //return the parsed data
         return new ModelData(textures, animationList, nbt);
@@ -278,6 +285,16 @@ public class BlockbenchModelParser {
 
 
             elementMap.put(id, nbt);
+        }
+    }
+
+    private void parseGroups(BlockbenchModel.GroupElement[] groups) {
+        if (groups == null)
+            return;
+
+        for (BlockbenchModel.GroupElement group : groups) {
+            if (group != null && group.uuid != null)
+                groupMap.put(group.uuid, group);
         }
     }
 
@@ -550,10 +567,12 @@ public class BlockbenchModelParser {
                         }
 
                         //bezier stuff
-                        if (notZero(keyFrame.bezier_left_value))
-                            keyframeNbt.put("bl", toNbtList(keyFrame.bezier_left_value));
-                        if (notZero(keyFrame.bezier_right_value))
-                            keyframeNbt.put("br", toNbtList(keyFrame.bezier_right_value));
+                        float[] bezierLeftValue = parseKeyframeVector(keyFrame.bezier_left_value, keyFrame.channel);
+                        float[] bezierRightValue = parseKeyframeVector(keyFrame.bezier_right_value, keyFrame.channel);
+                        if (notZero(bezierLeftValue))
+                            keyframeNbt.put("bl", toNbtList(bezierLeftValue));
+                        if (notZero(bezierRightValue))
+                            keyframeNbt.put("br", toNbtList(bezierRightValue));
                         if (isDifferent(keyFrame.bezier_left_time, -0.1f))
                             keyframeNbt.put("blt", toNbtList(keyFrame.bezier_left_time));
                         if (isDifferent(keyFrame.bezier_right_time, 0.1f))
@@ -610,9 +629,9 @@ public class BlockbenchModelParser {
         BlockbenchModel.KeyFrameData frameData = GSON.fromJson(object, BlockbenchModel.KeyFrameData.class);
 
         float fallback = channel.equals("scale") ? 1f : 0f;
-        Object x = keyFrameData(frameData.x, fallback);
-        Object y = keyFrameData(frameData.y, fallback);
-        Object z = keyFrameData(frameData.z, fallback);
+        Object x = keyFrameData(frameData.x, fallback, keyframeDirection(channel, 0));
+        Object y = keyFrameData(frameData.y, fallback, keyframeDirection(channel, 1));
+        Object z = keyFrameData(frameData.z, fallback, keyframeDirection(channel, 2));
 
         ListTag nbt = new ListTag();
         if (x instanceof Float xx && y instanceof Float yy && z instanceof Float zz) {
@@ -626,6 +645,28 @@ public class BlockbenchModelParser {
         }
 
         return nbt;
+    }
+
+    private float[] parseKeyframeVector(float[] values, String channel) {
+        if (values == null || !modernKeyframeDirections)
+            return values;
+
+        float[] result = values.clone();
+        for (int i = 0; i < result.length; i++)
+            result[i] *= keyframeDirection(channel, i);
+
+        return result;
+    }
+
+    private float keyframeDirection(String channel, int axis) {
+        if (!modernKeyframeDirections)
+            return 1f;
+
+        return switch (channel) {
+            case "position" -> axis == 0 ? -1f : 1f;
+            case "rotation" -> axis == 0 || axis == 1 ? -1f : 1f;
+            default -> 1f;
+        };
     }
 
     private ListTag parseOutliner(JsonArray outliner, boolean parentVsb) {
@@ -651,36 +692,47 @@ public class BlockbenchModelParser {
 
             //then parse as GroupElement (outliner)
             CompoundTag groupNbt = new CompoundTag();
-            BlockbenchModel.GroupElement group = GSON.fromJson(element, BlockbenchModel.GroupElement.class);
+            BlockbenchModel.GroupElement outlinerGroup = GSON.fromJson(element, BlockbenchModel.GroupElement.class);
+            BlockbenchModel.GroupElement group = groupMap.getOrDefault(outlinerGroup.uuid, outlinerGroup);
+            String name = group.name != null ? group.name : outlinerGroup.name;
+            if (name == null)
+                name = outlinerGroup.uuid == null ? "" : outlinerGroup.uuid;
+
+            String uuid = outlinerGroup.uuid != null ? outlinerGroup.uuid : group.uuid;
+            Boolean export = group.export != null ? group.export : outlinerGroup.export;
+            Boolean visibility = group.visibility != null ? group.visibility : outlinerGroup.visibility;
+            float[] origin = group.origin != null ? group.origin : outlinerGroup.origin;
+            float[] rotation = group.rotation != null ? group.rotation : outlinerGroup.rotation;
+            JsonArray groupChildren = outlinerGroup.children != null ? outlinerGroup.children : group.children;
 
             //skip not exported groups
-            if (group.export != null && !group.export)
+            if (export != null && !export)
                 continue;
 
             //parse fields
-            groupNbt.putString("name", group.name);
+            groupNbt.putString("name", name);
 
             //visibility
-            boolean thisVisibility = group.visibility == null || group.visibility;
+            boolean thisVisibility = visibility == null || visibility;
             if (thisVisibility != parentVsb)
                 groupNbt.putBoolean("vsb", thisVisibility);
 
             //parse transforms
-            if (notZero(group.origin))
-                groupNbt.put("piv", toNbtList(group.origin));
-            if (notZero(group.rotation))
-                groupNbt.put("rot", toNbtList(group.rotation));
+            if (notZero(origin))
+                groupNbt.put("piv", toNbtList(origin));
+            if (notZero(rotation))
+                groupNbt.put("rot", toNbtList(rotation));
 
             //parent type
-            parseParent(group.name, groupNbt);
+            parseParent(name, groupNbt);
 
             //parse children
-            if (!(group.children == null || group.children.isEmpty()))
-                groupNbt.put("chld", parseOutliner(group.children, thisVisibility));
+            if (!(groupChildren == null || groupChildren.isEmpty()))
+                groupNbt.put("chld", parseOutliner(groupChildren, thisVisibility));
 
             //add animations
-            if (animationMap.containsKey(group.uuid))
-                groupNbt.put("anim", animationMap.get(group.uuid));
+            if (animationMap.containsKey(uuid))
+                groupNbt.put("anim", animationMap.get(uuid));
 
             children.add(groupNbt);
         }
@@ -748,10 +800,16 @@ public class BlockbenchModelParser {
     }
 
     public static Object keyFrameData(String input, float fallback) {
+        return keyFrameData(input, fallback, 1f);
+    }
+
+    public static Object keyFrameData(String input, float fallback, float multiplier) {
         try {
-            return Float.parseFloat(input);
+            return Float.parseFloat(input) * multiplier;
         } catch (Exception ignored) {
-            return input == null || input.isBlank() ? fallback : input;
+            if (input == null || input.isBlank())
+                return fallback * multiplier;
+            return multiplier == 1f ? input : "-(" + input + ")";
         }
     }
 

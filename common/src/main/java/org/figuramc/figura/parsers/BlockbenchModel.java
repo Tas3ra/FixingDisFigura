@@ -12,6 +12,7 @@ public class BlockbenchModel {
     Resolution resolution;
     Texture[] textures;
     Element[] elements;
+    GroupElement[] groups;
     Animation[] animations;
 
     // do not reflection-parse the outliner
@@ -55,7 +56,7 @@ public class BlockbenchModel {
         JsonObject vertices;
     }
 
-    // aka outliner object
+    // aka group/outliner object
     public static class GroupElement {
         String name;
         String uuid;

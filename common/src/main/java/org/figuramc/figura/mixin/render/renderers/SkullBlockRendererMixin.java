@@ -30,6 +30,7 @@ import org.figuramc.figura.ducks.SkullBlockRendererHelper;
 import org.figuramc.figura.lua.api.entity.EntityAPI;
 import org.figuramc.figura.lua.api.world.BlockStateAPI;
 import org.figuramc.figura.lua.api.world.ItemStackAPI;
+import org.figuramc.figura.model.rendering.EntityRenderMode;
 import org.figuramc.figura.permissions.Permissions;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -61,6 +62,7 @@ public abstract class SkullBlockRendererMixin implements BlockEntityRenderer<Sku
         Entity localEntity = SkullBlockRendererAccessor.getEntity();
 
         SkullBlockRendererAccessor.SkullRenderMode localMode = SkullBlockRendererAccessor.getRenderMode();
+        EntityRenderMode localEntityRenderMode = SkullBlockRendererAccessor.getEntityRenderMode();
         SkullBlockRendererAccessor.clear();
 
         // avatar pointer incase avatar variable is set during render. (unlikely)
@@ -73,8 +75,11 @@ public abstract class SkullBlockRendererMixin implements BlockEntityRenderer<Sku
         if (figura$isUnownedItemRender(localBlock, localItem, localEntity, localMode))
             return;
 
-        if (localMode == SkullBlockRendererAccessor.SkullRenderMode.GUI) {
-            figura$submitGuiSkull(localAvatar, localBlock, localItem, localEntity, stack, submitNodeCollector, light, direction, yaw, model);
+        boolean guiItemSkull = localMode == SkullBlockRendererAccessor.SkullRenderMode.GUI;
+        boolean guiEntitySkull = figura$isGuiEntityRender(localEntityRenderMode);
+        if (guiItemSkull || guiEntitySkull) {
+            String eventMode = guiItemSkull ? SkullBlockRendererAccessor.SkullRenderMode.OTHER.name() : localMode.name();
+            figura$submitGuiSkull(localAvatar, localBlock, localItem, localEntity, stack, submitNodeCollector, light, direction, yaw, model, eventMode);
             return;
         }
 
@@ -115,7 +120,12 @@ public abstract class SkullBlockRendererMixin implements BlockEntityRenderer<Sku
     }
 
     @Unique
-    private static void figura$submitGuiSkull(Avatar localAvatar, SkullBlockRenderState localBlock, ItemStack localItem, Entity localEntity, PoseStack stack, SubmitNodeCollector submitNodeCollector, int light, Direction direction, float yaw, SkullModelBase model) {
+    private static boolean figura$isGuiEntityRender(EntityRenderMode renderMode) {
+        return renderMode == EntityRenderMode.MINECRAFT_GUI || renderMode == EntityRenderMode.FIGURA_GUI || renderMode == EntityRenderMode.PAPERDOLL;
+    }
+
+    @Unique
+    private static void figura$submitGuiSkull(Avatar localAvatar, SkullBlockRenderState localBlock, ItemStack localItem, Entity localEntity, PoseStack stack, SubmitNodeCollector submitNodeCollector, int light, Direction direction, float yaw, SkullModelBase model, String eventMode) {
         PoseStack guiStack = new PoseStack();
         guiStack.last().set(stack.last());
         boolean[] rendered = {false};
@@ -131,7 +141,7 @@ public abstract class SkullBlockRendererMixin implements BlockEntityRenderer<Sku
 
             FiguraMod.pushProfiler(localBlock != null ? localBlock.blockPos.toString() : String.valueOf(i));
             FiguraMod.pushProfiler("event");
-            boolean bool = localAvatar.skullRenderEvent(Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(true), b, i, e, SkullBlockRendererAccessor.SkullRenderMode.OTHER.name());
+            boolean bool = localAvatar.skullRenderEvent(Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(true), b, i, e, eventMode);
 
             FiguraMod.popPushProfiler("render");
             rendered[0] = bool || localAvatar.skullRender(guiStack, bufferSource, light, direction, yaw, true, true);

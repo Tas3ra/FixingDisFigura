@@ -16,6 +16,7 @@ import org.figuramc.figura.avatar.AvatarManager;
 import org.figuramc.figura.ducks.PlayerHeadRenderInfoExtension;
 import org.figuramc.figura.ducks.SkullBlockRendererAccessor;
 import org.figuramc.figura.ducks.SkullBlockRendererHelper;
+import org.figuramc.figura.model.rendering.EntityRenderMode;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -46,6 +47,7 @@ public abstract class PlayerHeadSpecialRendererMixin {
         ItemStack contextStack = SkullBlockRendererAccessor.getItem();
         Entity contextEntity = SkullBlockRendererAccessor.getEntity();
         SkullBlockRendererAccessor.SkullRenderMode contextMode = SkullBlockRendererAccessor.getRenderMode();
+        EntityRenderMode contextEntityRenderMode = SkullBlockRendererAccessor.getEntityRenderMode();
         if (contextMode == SkullBlockRendererAccessor.SkullRenderMode.OTHER && itemDisplayContext == ItemDisplayContext.GUI)
             contextMode = SkullBlockRendererAccessor.SkullRenderMode.GUI;
 
@@ -54,7 +56,7 @@ public abstract class PlayerHeadSpecialRendererMixin {
 
         if (playerHeadRenderInfo == null) {
             SkullBlockRendererHelper.setAvatar(AvatarManager.getAvatarForItem(contextStack));
-            figura$restoreRenderContext(contextStack, contextEntity, contextMode);
+            figura$restoreRenderContext(contextStack, contextEntity, contextMode, contextEntityRenderMode);
             return;
         }
 
@@ -65,7 +67,7 @@ public abstract class PlayerHeadSpecialRendererMixin {
             avatar = AvatarManager.getAvatarForPlayer(playerHeadRenderInfo.gameProfile().id());
 
         SkullBlockRendererHelper.setAvatar(avatar);
-        figura$restoreRenderContext(itemStack, contextEntity, contextMode);
+        figura$restoreRenderContext(itemStack, contextEntity, contextMode, contextEntityRenderMode);
     }
 
     @Inject(method = "submit(Lnet/minecraft/client/renderer/PlayerSkinRenderCache$RenderInfo;Lnet/minecraft/world/item/ItemDisplayContext;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;IIZI)V", at = @At("RETURN"))
@@ -74,11 +76,12 @@ public abstract class PlayerHeadSpecialRendererMixin {
         SkullBlockRendererAccessor.clear();
     }
 
-    private static void figura$restoreRenderContext(ItemStack itemStack, Entity entity, SkullBlockRendererAccessor.SkullRenderMode mode) {
+    private static void figura$restoreRenderContext(ItemStack itemStack, Entity entity, SkullBlockRendererAccessor.SkullRenderMode mode, EntityRenderMode entityRenderMode) {
         if (itemStack != null)
             SkullBlockRendererAccessor.setItem(itemStack);
         if (entity != null)
             SkullBlockRendererAccessor.setEntity(entity);
         SkullBlockRendererAccessor.setRenderMode(mode);
+        SkullBlockRendererAccessor.setEntityRenderMode(entityRenderMode);
     }
 }

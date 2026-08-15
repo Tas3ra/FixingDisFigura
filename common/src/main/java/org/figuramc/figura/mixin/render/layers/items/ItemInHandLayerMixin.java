@@ -28,7 +28,9 @@ import org.figuramc.figura.ducks.SkullBlockRendererAccessor;
 import org.figuramc.figura.lua.api.world.ItemStackAPI;
 import org.figuramc.figura.math.vector.FiguraVec3;
 import org.figuramc.figura.model.ParentType;
+import org.figuramc.figura.model.rendering.EntityRenderMode;
 import org.figuramc.figura.utils.RenderUtils;
+import org.figuramc.figura.utils.ui.UIHelper;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -75,6 +77,7 @@ public abstract class ItemInHandLayerMixin<S extends ArmedEntityRenderState, M e
                     Entity entity = AvatarManager.getEntity(state);
                     SkullBlockRendererAccessor.clear();
                     SkullBlockRendererAccessor.setEntity(entity);
+                    figura$setSkullEntityRenderMode(av);
                     SkullBlockRendererAccessor.setRenderMode(switch (((FiguraItemStackRenderStateExtension) itemStackRenderState).figura$getDisplayContext()) {
                         case FIRST_PERSON_LEFT_HAND -> SkullBlockRendererAccessor.SkullRenderMode.FIRST_PERSON_LEFT_HAND;
                         case FIRST_PERSON_RIGHT_HAND -> SkullBlockRendererAccessor.SkullRenderMode.FIRST_PERSON_RIGHT_HAND;
@@ -111,6 +114,7 @@ public abstract class ItemInHandLayerMixin<S extends ArmedEntityRenderState, M e
             if (av != null && stack != null && entity != null && stack.getItem() instanceof BlockItem bl && bl.getBlock() instanceof AbstractSkullBlock sk) {
                 SkullBlockRendererAccessor.clear();
                 SkullBlockRendererAccessor.setEntity(entity);
+                figura$setSkullEntityRenderMode(av);
                 SkullBlockRendererAccessor.setRenderMode(switch (((FiguraItemStackRenderStateExtension) instance).figura$getDisplayContext()) {
                     case FIRST_PERSON_LEFT_HAND -> SkullBlockRendererAccessor.SkullRenderMode.FIRST_PERSON_LEFT_HAND;
                     case FIRST_PERSON_RIGHT_HAND -> SkullBlockRendererAccessor.SkullRenderMode.FIRST_PERSON_RIGHT_HAND;
@@ -130,6 +134,15 @@ public abstract class ItemInHandLayerMixin<S extends ArmedEntityRenderState, M e
             original.call(instance, matrices, submitNodeCollector, light, overlay, outlineColor);
         } finally {
             SkullBlockRendererAccessor.clear();
+        }
+    }
+
+    @Unique
+    private static void figura$setSkullEntityRenderMode(Avatar wearerAvatar) {
+        if (wearerAvatar != null && wearerAvatar.renderMode != EntityRenderMode.OTHER) {
+            SkullBlockRendererAccessor.setEntityRenderMode(wearerAvatar.renderMode);
+        } else if (UIHelper.paperdoll) {
+            SkullBlockRendererAccessor.setEntityRenderMode(EntityRenderMode.MINECRAFT_GUI);
         }
     }
 
