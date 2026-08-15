@@ -101,7 +101,7 @@ public abstract class MinecraftMixin {
 
             if (!PopupMenu.hasEntity())
                 figura$findPopupTarget();
-        } else if (PopupMenu.isEnabled()) {
+        } else if (PopupMenu.isEnabled() && !PopupMenu.isVolumePanelOpen()) {
             PopupMenu.run();
         }
 
@@ -130,7 +130,7 @@ public abstract class MinecraftMixin {
             ActionWheel.setEnabled(false);
 
         if (PopupMenu.isEnabled())
-            PopupMenu.run();
+            PopupMenu.dismiss();
     }
 
     @Inject(at = @At("RETURN"), method = "clearClientLevel")

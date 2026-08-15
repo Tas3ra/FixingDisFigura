@@ -31,6 +31,11 @@ public class MouseHandlerMixin {
         if (window != this.minecraft.getWindow().handle())
             return;
 
+        if (PopupMenu.isEnabled() && PopupMenu.hasEntity() && PopupMenu.mouseButton(figura$getGuiMouseX(), figura$getGuiMouseY(), mouseButtonInfo.button(), action)) {
+            ci.cancel();
+            return;
+        }
+
         Avatar avatar = AvatarManager.getAvatarForPlayer(FiguraMod.getLocalPlayerUUID());
         if (avatar == null || avatar.luaRuntime == null)
             return;
@@ -73,6 +78,13 @@ public class MouseHandlerMixin {
 
     @Inject(method = "onMove", at = @At("HEAD"), cancellable = true)
     private void onMove(long window, double x, double y, CallbackInfo ci) {
+        if (window == this.minecraft.getWindow().handle() && PopupMenu.isEnabled() && PopupMenu.mouseMoved(figura$toGuiMouseX(x), figura$toGuiMouseY(y))) {
+            this.xpos = x;
+            this.ypos = y;
+            ci.cancel();
+            return;
+        }
+
         Avatar avatar = AvatarManager.getAvatarForPlayer(FiguraMod.getLocalPlayerUUID());
         if (avatar != null && avatar.mouseMoveEvent(x - this.xpos, y - this.ypos) && (this.mouseGrabbed || this.minecraft.screen == null)) {
             this.xpos = x;
@@ -86,5 +98,21 @@ public class MouseHandlerMixin {
         Avatar avatar = AvatarManager.getAvatarForPlayer(FiguraMod.getLocalPlayerUUID());
         if (ActionWheel.isEnabled() || (avatar != null && avatar.luaRuntime != null && avatar.luaRuntime.host.unlockCursor))
             ci.cancel();
+    }
+
+    private double figura$getGuiMouseX() {
+        return figura$toGuiMouseX(this.xpos);
+    }
+
+    private double figura$getGuiMouseY() {
+        return figura$toGuiMouseY(this.ypos);
+    }
+
+    private double figura$toGuiMouseX(double x) {
+        return x * this.minecraft.getWindow().getGuiScaledWidth() / this.minecraft.getWindow().getWidth();
+    }
+
+    private double figura$toGuiMouseY(double y) {
+        return y * this.minecraft.getWindow().getGuiScaledHeight() / this.minecraft.getWindow().getHeight();
     }
 }

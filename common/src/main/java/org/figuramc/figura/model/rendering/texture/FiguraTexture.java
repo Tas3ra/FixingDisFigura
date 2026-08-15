@@ -115,7 +115,7 @@ public class FiguraTexture extends SimpleTexture {
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
         // Make sure it doesn't close twice (minecraft tries to close the texture when reloading textures
         if (isClosed) return;
 
@@ -131,7 +131,10 @@ public class FiguraTexture extends SimpleTexture {
         ((TextureManagerAccessor) Minecraft.getInstance().getTextureManager()).getByPath().remove(this.getLocation());
     }
 
-    public void uploadIfDirty(boolean clamp, boolean blur) {
+    public synchronized void uploadIfDirty(boolean clamp, boolean blur) {
+        if (isClosed || nativeImageTexture == null)
+            return;
+
         if (!registered) {
             Minecraft.getInstance().getTextureManager().register(this.getLocation(), this);
             registered = true;
@@ -156,7 +159,10 @@ public class FiguraTexture extends SimpleTexture {
         gpuDevice.createCommandEncoder().writeToTexture(this.texture, nativeImage);
     }
 
-    public void writeTexture(Path dest) throws IOException {
+    public synchronized void writeTexture(Path dest) throws IOException {
+        if (isClosed)
+            throw new IOException("Texture is closed");
+
         nativeImageTexture.writeToFile(dest);
     }
 
@@ -166,18 +172,48 @@ public class FiguraTexture extends SimpleTexture {
             backup = copy();
     }
 
-    public NativeImage copy() {
-        NativeImage image = new NativeImage(nativeImageTexture.format(), nativeImageTexture.getWidth(), nativeImageTexture.getHeight(), true);
-        image.copyFrom(nativeImageTexture);
+    public synchronized NativeImage copy() {
+        if (isClosed || nativeImageTexture == null)
+            return blankImage();
+
+        NativeImage image = null;
+        try {
+            image = new NativeImage(nativeImageTexture.format(), nativeImageTexture.getWidth(), nativeImageTexture.getHeight(), true);
+            image.copyFrom(nativeImageTexture);
+            return image;
+        } catch (IllegalStateException e) {
+            if (image != null)
+                image.close();
+            return blankImage();
+        }
+    }
+
+    private static NativeImage blankImage() {
+        NativeImage image = new NativeImage(1, 1, true);
+        image.setPixelABGR(0, 0, 0);
         return image;
     }
 
-    public int getWidth() {
-        return nativeImageTexture.getWidth();
+    public synchronized int getWidth() {
+        if (isClosed || nativeImageTexture == null)
+            return 0;
+
+        try {
+            return nativeImageTexture.getWidth();
+        } catch (IllegalStateException e) {
+            return 0;
+        }
     }
 
-    public int getHeight() {
-        return nativeImageTexture.getHeight();
+    public synchronized int getHeight() {
+        if (isClosed || nativeImageTexture == null)
+            return 0;
+
+        try {
+            return nativeImageTexture.getHeight();
+        } catch (IllegalStateException e) {
+            return 0;
+        }
     }
 
     public Identifier getLocation() {

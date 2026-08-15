@@ -1,0 +1,11 @@
+{
+  "name": "Screen Shake Bridge",
+  "description": "Opt-in bridge demo for gentle camera shake requests.",
+  "authors": [
+    "Tas3ra"
+  ],
+  "color": "#5865f2",
+  "autoScripts": [
+    "script"
+  ]
+}

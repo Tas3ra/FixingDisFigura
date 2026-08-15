@@ -15,6 +15,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.FontDescription;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.component.ResolvableProfile;
 import net.minecraft.world.level.block.entity.SkullBlockEntity;
@@ -33,6 +34,7 @@ import org.figuramc.figura.utils.FiguraIdentifier;
 import org.figuramc.figura.utils.FiguraText;
 import org.figuramc.figura.utils.MathUtils;
 import org.figuramc.figura.utils.ui.UIHelper;
+import org.figuramc.figura.gui.widgets.SliderWidget;
 import org.joml.Matrix3x2fStack;
 
 import java.util.List;
@@ -43,6 +45,16 @@ public class PopupMenu {
 
     private static final FiguraIdentifier BACKGROUND = new FiguraIdentifier("textures/gui/popup.png");
     private static final FiguraIdentifier ICONS = new FiguraIdentifier("textures/gui/popup_icons.png");
+    private static final FiguraIdentifier BUTTON = new FiguraIdentifier("textures/gui/button.png");
+
+    private static final int ICON_SIZE = 18;
+    private static final int VOLUME_INDEX = 4;
+    private static final int VOLUME_PANEL_WIDTH = 132;
+    private static final int VOLUME_PANEL_HEIGHT = 24;
+    private static final int VOLUME_TOGGLE_WIDTH = 38;
+    private static final int VOLUME_TOGGLE_HEIGHT = 14;
+    private static final int VOLUME_SLIDER_WIDTH = 58;
+    private static final int VOLUME_SLIDER_HEIGHT = 11;
 
     private static final MutableComponent VERSION_WARN = Component.empty()
             .append(Badges.System.WARNING.badge.copy().withStyle(Style.EMPTY.withFont(new FontDescription.Resource(Badges.FONT))))
@@ -73,21 +85,22 @@ public class PopupMenu {
                 if (PermissionManager.decreaseCategory(pack))
                     FiguraToast.sendToast(FiguraText.of("toast.permission_change"), pack.getCategoryName());
             }),
-            Pair.of(FiguraText.of("popup_menu.change_volume"), id -> {
-                PermissionPack pack = PermissionManager.get(id);
-                int volume = pack.get(Permissions.VOLUME);
-                volume = volume > 50 ? 50 : volume > 0 ? 0 : 100;
-
-                pack.insert(Permissions.VOLUME, volume, FiguraMod.MOD_ID);
-                PermissionManager.saveToDisk();
-                FiguraToast.sendToast(FiguraText.of("toast.volume_change"), Component.literal(volume + "%"));
-            })
+            Pair.of(FiguraText.of("popup_menu.change_volume"), PopupMenu::openVolumePanel)
     );
     private static final int LENGTH = BUTTONS.size();
 
     // runtime data
     private static int index = 0;
     private static boolean enabled = false;
+    private static boolean volumePanelOpen = false;
+    private static boolean volumeDragging = false;
+    private static boolean editCategoryVolume = false;
+    private static double popupX;
+    private static double popupY;
+    private static double popupScale = 1d;
+    private static double lastMouseX;
+    private static double lastMouseY;
+    private static boolean popupProjected;
     private static Entity entity;
     private static UUID id;
     private static Component targetName;
@@ -100,7 +113,7 @@ public class PopupMenu {
 
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player == null) {
-            clearTarget();
+            close();
             return;
         }
 
@@ -115,19 +128,19 @@ public class PopupMenu {
                     .add(0f, entity.getBbHeight() + 0.1f, 0f);
 
             if (entity.isInvisibleTo(minecraft.player) && entity != minecraft.player) {
-                clearTarget();
+                close();
                 return;
             }
         } else if (skullTarget != null) {
             if (minecraft.level == null || skullTarget.isRemoved() || minecraft.level.getBlockEntity(skullTarget.getBlockPos()) != skullTarget) {
-                clearTarget();
+                close();
                 return;
             }
 
             ResolvableProfile profile = skullTarget.getOwnerProfile();
             renderId = AvatarManager.getIdForProfile(profile);
             if (renderId == null || AvatarManager.getAvatarForPlayer(renderId) == null) {
-                clearTarget();
+                close();
                 return;
             }
 
@@ -136,7 +149,7 @@ public class PopupMenu {
         }
 
         if (renderId == null || renderName == null || renderPos == null) {
-            clearTarget();
+            close();
             return;
         }
 
@@ -158,11 +171,16 @@ public class PopupMenu {
         double h = window.getGuiScaledHeight();
         double s = Configs.POPUP_SCALE.value * Math.max(Math.min(window.getHeight() * 0.035 / vec.w * (1d / window.getGuiScale()), Configs.POPUP_MAX_SIZE.value), Configs.POPUP_MIN_SIZE.value);
 
-        pose.translate((float) ((vec.x + 1) / 2 * w), (float) ((vec.y + 1) / 2 * h));
+        popupX = (vec.x + 1) / 2 * w;
+        popupY = (vec.y + 1) / 2 * h;
+        popupScale = s * 0.5d;
+        popupProjected = true;
+
+        pose.translate((float) popupX, (float) popupY);
         pose.scale((float) (s * 0.5), (float) (s * 0.5));
 
         // background
-        int width = LENGTH * 18;
+        int width = LENGTH * ICON_SIZE;
 
         UIHelper.enableBlend();
         int frame = Configs.REDUCED_MOTION.value ? 0 : (int) ((FiguraMod.ticks / 5f) % 4);
@@ -172,7 +190,7 @@ public class PopupMenu {
         pose.translate(0f, 0f);
         UIHelper.enableBlend();
         for (int i = 0; i < LENGTH; i++)
-            gui.blit(RenderPipelines.GUI_TEXTURED, ICONS, width / -2 + (18 * i), -24, 18 * i, i == index ? 18 : 0, 18, 18, 18, 18, width, 36);
+            gui.blit(RenderPipelines.GUI_TEXTURED, ICONS, width / -2 + (ICON_SIZE * i), -24, ICON_SIZE * i, i == index ? ICON_SIZE : 0, ICON_SIZE, ICON_SIZE, ICON_SIZE, ICON_SIZE, width, 36);
 
         // texts
         Font font = minecraft.font;
@@ -215,15 +233,26 @@ public class PopupMenu {
         if (noPermissions)
             UIHelper.renderOutlineText(gui, font, PERMISSION_WARN, -font.width(PERMISSION_WARN) / 2, (error ? font.lineHeight : 0) + (version ? font.lineHeight : 0), 0xFFFFFF, 0x202020);
 
+        if (volumePanelOpen)
+            renderVolumePanel(gui, font);
+
         // finish rendering
         pose.popMatrix();
     }
 
     public static void scroll(double d) {
+        if (volumePanelOpen) {
+            setVolume(getVolume() + (d > 0 ? 5 : -5), true);
+            return;
+        }
+
         index = (int) (index - d + LENGTH) % LENGTH;
     }
 
     public static void hotbarKeyPressed(int i) {
+        if (volumePanelOpen)
+            return;
+
         if (i < LENGTH && i >= 0)
             index = i;
     }
@@ -232,9 +261,8 @@ public class PopupMenu {
         if (id != null)
             BUTTONS.get(index).getSecond().accept(id);
 
-        enabled = false;
-        clearTarget();
-        index = 0;
+        if (!volumePanelOpen)
+            close();
     }
 
     public static boolean isEnabled() {
@@ -242,7 +270,77 @@ public class PopupMenu {
     }
 
     public static void setEnabled(boolean enabled) {
+        if (!enabled) {
+            close();
+            return;
+        }
+
         PopupMenu.enabled = enabled;
+    }
+
+    public static boolean isVolumePanelOpen() {
+        return volumePanelOpen;
+    }
+
+    public static boolean mouseButton(double mouseX, double mouseY, int button, int action) {
+        lastMouseX = mouseX;
+        lastMouseY = mouseY;
+
+        if (!isEnabled() || id == null || button != 0)
+            return false;
+
+        if (action == 0) {
+            if (volumeDragging) {
+                volumeDragging = false;
+                saveVolume();
+                return true;
+            }
+
+            return false;
+        }
+
+        if (!volumePanelOpen) {
+            if (index == VOLUME_INDEX && isMouseOverIcon(mouseX, mouseY, VOLUME_INDEX)) {
+                openVolumePanel(id);
+                return true;
+            }
+
+            return false;
+        }
+
+        double localX = toLocalX(mouseX);
+        double localY = toLocalY(mouseY);
+        if (isMouseOverVolumeToggle(localX, localY)) {
+            editCategoryVolume = !editCategoryVolume;
+            Minecraft.getInstance().getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1f));
+            return true;
+        }
+
+        if (isMouseOverVolumeSlider(localX, localY)) {
+            volumeDragging = true;
+            setVolumeFromLocalX(localX, false);
+            Minecraft.getInstance().getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1f));
+            return true;
+        }
+
+        if (!isMouseOverVolumePanel(localX, localY)) {
+            saveVolume();
+            close();
+            return true;
+        }
+
+        return true;
+    }
+
+    public static boolean mouseMoved(double mouseX, double mouseY) {
+        lastMouseX = mouseX;
+        lastMouseY = mouseY;
+
+        if (!volumeDragging)
+            return false;
+
+        setVolumeFromLocalX(toLocalX(mouseX), false);
+        return true;
     }
 
     public static boolean hasEntity() {
@@ -300,6 +398,152 @@ public class PopupMenu {
         targetPos = null;
         skullTarget = null;
         profileTarget = false;
+        popupProjected = false;
+    }
+
+    public static void close() {
+        close(true);
+    }
+
+    public static void dismiss() {
+        close(false);
+    }
+
+    private static void close(boolean grabMouse) {
+        saveVolume();
+        enabled = false;
+        volumePanelOpen = false;
+        volumeDragging = false;
+        editCategoryVolume = false;
+        clearTarget();
+        index = 0;
+        if (grabMouse)
+            grabMouseIfNeeded();
+    }
+
+    private static void openVolumePanel(UUID targetId) {
+        if (targetId == null)
+            return;
+
+        id = targetId;
+        index = VOLUME_INDEX;
+        enabled = true;
+        volumePanelOpen = true;
+        volumeDragging = false;
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.screen == null)
+            minecraft.mouseHandler.releaseMouse();
+    }
+
+    private static void renderVolumePanel(GuiGraphics gui, Font font) {
+        int panelX = -VOLUME_PANEL_WIDTH / 2;
+        int panelY = 6;
+
+        gui.fill(panelX + 2, panelY + 2, panelX + VOLUME_PANEL_WIDTH + 2, panelY + VOLUME_PANEL_HEIGHT + 2, 0x80000000);
+        gui.fill(panelX + 1, panelY + 1, panelX + VOLUME_PANEL_WIDTH - 1, panelY + VOLUME_PANEL_HEIGHT - 1, UIHelper.adjustColor(0xE0101010));
+        UIHelper.fillOutline(gui, panelX, panelY, VOLUME_PANEL_WIDTH, VOLUME_PANEL_HEIGHT, UIHelper.adjustColor(0xFFFFFFFF));
+
+        int toggleX = volumeToggleX();
+        int toggleY = volumeToggleY();
+        boolean toggleHovered = isMouseOverVolumeToggle(toLocalX(lastMouseX), toLocalY(lastMouseY));
+        UIHelper.blitSliced(gui, toggleX, toggleY, VOLUME_TOGGLE_WIDTH, VOLUME_TOGGLE_HEIGHT, toggleHovered ? 32f : 16f, 0f, 16, 16, 48, 32, BUTTON);
+
+        Component scope = FiguraText.of(editCategoryVolume ? "popup_menu.volume_scope_all" : "popup_menu.volume_scope_target");
+        UIHelper.renderCenteredScrollingText(gui, scope, toggleX + 1, toggleY, VOLUME_TOGGLE_WIDTH - 2, VOLUME_TOGGLE_HEIGHT, 0xFFFFFF);
+
+        int sliderX = volumeSliderX();
+        int sliderY = volumeSliderY();
+        int volume = getVolume();
+        float progress = volume / 100f;
+        boolean sliderActive = volumeDragging || isMouseOverVolumeSlider(toLocalX(lastMouseX), toLocalY(lastMouseY));
+
+        UIHelper.enableBlend();
+        gui.blit(RenderPipelines.GUI_TEXTURED, SliderWidget.SLIDER_TEXTURE, sliderX, sliderY + 3, sliderActive ? 10f : 0f, 0f, VOLUME_SLIDER_WIDTH, 5, 5, 5, 33, 16);
+        for (int i = 0; i < 3; i++)
+            gui.blit(RenderPipelines.GUI_TEXTURED, SliderWidget.SLIDER_TEXTURE, sliderX + 3 + ((VOLUME_SLIDER_WIDTH - 11) * i / 2), sliderY + 3, sliderActive ? 15f : 5f, 0f, 5, 5, 5, 5, 33, 16);
+        gui.blit(RenderPipelines.GUI_TEXTURED, SliderWidget.SLIDER_TEXTURE, sliderX + Math.round(progress * (VOLUME_SLIDER_WIDTH - 11)), sliderY, sliderActive ? 22f : 11f, 5f, 11, 11, 33, 16);
+
+        Component value = Component.literal(volume + "%");
+        gui.drawString(font, value, panelX + VOLUME_PANEL_WIDTH - font.width(value) - 6, panelY + 8, UIHelper.adjustColor(0xFFFFFF));
+    }
+
+    private static PermissionPack getVolumePack() {
+        PermissionPack target = PermissionManager.get(id);
+        if (!editCategoryVolume)
+            return target;
+
+        PermissionPack category = PermissionManager.CATEGORIES.get(target.getCategory());
+        return category == null ? target : category;
+    }
+
+    private static int getVolume() {
+        return Mth.clamp(getVolumePack().get(Permissions.VOLUME), 0, 100);
+    }
+
+    private static void setVolume(int volume, boolean save) {
+        getVolumePack().insert(Permissions.VOLUME, Mth.clamp(volume, 0, 100), FiguraMod.MOD_ID);
+        if (save)
+            saveVolume();
+    }
+
+    private static void setVolumeFromLocalX(double localX, boolean save) {
+        double progress = (localX - volumeSliderX()) / (double) (VOLUME_SLIDER_WIDTH - 11);
+        setVolume((int) Math.round(Mth.clamp(progress, 0d, 1d) * 100d), save);
+    }
+
+    private static void saveVolume() {
+        if (volumePanelOpen && id != null)
+            PermissionManager.saveToDisk();
+    }
+
+    private static boolean isMouseOverIcon(double mouseX, double mouseY, int icon) {
+        if (!popupProjected)
+            return false;
+
+        return UIHelper.isMouseOver((LENGTH * ICON_SIZE) / -2 + (ICON_SIZE * icon), -24, ICON_SIZE, ICON_SIZE, toLocalX(mouseX), toLocalY(mouseY));
+    }
+
+    private static boolean isMouseOverVolumePanel(double localX, double localY) {
+        return UIHelper.isMouseOver(-VOLUME_PANEL_WIDTH / 2, 6, VOLUME_PANEL_WIDTH, VOLUME_PANEL_HEIGHT, localX, localY);
+    }
+
+    private static boolean isMouseOverVolumeToggle(double localX, double localY) {
+        return UIHelper.isMouseOver(volumeToggleX(), volumeToggleY(), VOLUME_TOGGLE_WIDTH, VOLUME_TOGGLE_HEIGHT, localX, localY);
+    }
+
+    private static boolean isMouseOverVolumeSlider(double localX, double localY) {
+        return UIHelper.isMouseOver(volumeSliderX(), volumeSliderY(), VOLUME_SLIDER_WIDTH, VOLUME_SLIDER_HEIGHT, localX, localY);
+    }
+
+    private static int volumeToggleX() {
+        return -VOLUME_PANEL_WIDTH / 2 + 6;
+    }
+
+    private static int volumeToggleY() {
+        return 11;
+    }
+
+    private static int volumeSliderX() {
+        return -VOLUME_PANEL_WIDTH / 2 + 50;
+    }
+
+    private static int volumeSliderY() {
+        return 12;
+    }
+
+    private static double toLocalX(double mouseX) {
+        return popupScale == 0d ? 0d : (mouseX - popupX) / popupScale;
+    }
+
+    private static double toLocalY(double mouseY) {
+        return popupScale == 0d ? 0d : (mouseY - popupY) / popupScale;
+    }
+
+    private static void grabMouseIfNeeded() {
+        Minecraft minecraft = Minecraft.getInstance();
+        Avatar avatar = AvatarManager.getAvatarForPlayer(FiguraMod.getLocalPlayerUUID());
+        if (minecraft.screen == null && (avatar == null || avatar.luaRuntime == null || !avatar.luaRuntime.host.unlockCursor))
+            minecraft.mouseHandler.grabMouse();
     }
 
     private static Component resolveProfileName(ResolvableProfile profile, UUID id) {

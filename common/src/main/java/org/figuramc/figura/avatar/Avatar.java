@@ -524,6 +524,11 @@ public class Avatar {
         if (loaded) run("RESOURCE_RELOAD", tick);
     }
 
+    public boolean canRender() {
+        FiguraRenderer renderer = this.renderer;
+        return loaded && renderer != null && renderer.hasRoot();
+    }
+
     public void damageEvent(String sourceType, EntityAPI<?> sourceCause, EntityAPI<?> sourceDirect, FiguraVec3 sourcePosition) {
         if (loaded) run("DAMAGE", tick, sourceType, sourceCause, sourceDirect, sourcePosition);
     }
