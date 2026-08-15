@@ -70,10 +70,23 @@ public class FiguraTextureSet {
                 if (info == null)
                     yield null;
 
+                var skin = info.getSkin();
+                if (skin == null)
+                    yield null;
+
                 yield switch (type) {
-                    case CAPE -> info.getSkin().cape().texturePath();
-                    case ELYTRA -> info.getSkin().elytra() == null ? Identifier.withDefaultNamespace("elytra") : info.getSkin().elytra().texturePath();
-                    default -> info.getSkin().body().texturePath();
+                    case CAPE -> {
+                        var cape = skin.cape();
+                        yield cape == null ? null : cape.texturePath();
+                    }
+                    case ELYTRA -> {
+                        var elytra = skin.elytra();
+                        yield elytra == null ? Identifier.withDefaultNamespace("elytra") : elytra.texturePath();
+                    }
+                    default -> {
+                        var body = skin.body();
+                        yield body == null ? null : body.texturePath();
+                    }
                 };
             }
             case RESOURCE -> {
