@@ -67,6 +67,9 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
 
     @Override
     public void updateMatrices() {
+        if (root == null)
+            return;
+
         // flag rendering state
         this.isRendering = true;
 
@@ -97,7 +100,7 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
         int[] remainingComplexity = new int[] {prev};
 
         // explore all model parts
-        if (root.customization.visible) {
+        if (root != null && root.customization.visible) {
             if (currentFilterScheme.parentType.isSeparate) {
                 List<FiguraModelPart> parts = separatedParts.get(currentFilterScheme.parentType);
                 if (parts != null) {
@@ -116,6 +119,9 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
     }
 
     protected int commonRender(double vertOffset) {
+        if (root == null)
+            return 0;
+
         // flag rendering state
         this.isRendering = true;
         boolean immediateTextTaskLayer = bufferSource instanceof MultiBufferSource.BufferSource && TextRenderUtils.beginImmediateTextTaskLayer();

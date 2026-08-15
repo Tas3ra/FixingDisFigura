@@ -144,6 +144,10 @@ public abstract class FiguraRenderer {
     public abstract int renderSpecialParts();
     public abstract void updateMatrices();
 
+    public synchronized boolean hasRoot() {
+        return root != null;
+    }
+
     public synchronized double getVisibleModelTopY(Entity entity, float tickDelta) {
         if (root == null || entity == null)
             return Double.NaN;
@@ -212,6 +216,8 @@ public abstract class FiguraRenderer {
 
     public void sortParts() {
         separatedParts.clear();
+        if (root == null)
+            return;
         _sortParts(root, ParentType.None);
     }
 

@@ -16,7 +16,7 @@ public class FiguraFeatureRenderer {
     }
 
     private static <S extends net.minecraft.client.renderer.entity.state.EntityRenderState> void renderSubmission(FiguraSubmission<S> figuraSubmission, MultiBufferSource bufferSource) {
-        if (figuraSubmission.avatar() == null)
+        if (figuraSubmission.avatar() == null || !figuraSubmission.avatar().canRender())
             return;
 
         figuraSubmission.renderer().apply(
