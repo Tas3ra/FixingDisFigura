@@ -37,7 +37,7 @@ public abstract class PlayerHeadSpecialRendererMixin {
             avatar = AvatarManager.getAvatarForPlayer(original.gameProfile().id());
         PlayerHeadRenderInfoExtension extension = (PlayerHeadRenderInfoExtension)(Object)original;
         extension.figura$setAvatar(avatar);
-        extension.figura$setItemStack(null);
+        extension.figura$setItemStack(itemStack);
         return original;
     }
 
@@ -46,6 +46,8 @@ public abstract class PlayerHeadSpecialRendererMixin {
         ItemStack contextStack = SkullBlockRendererAccessor.getItem();
         Entity contextEntity = SkullBlockRendererAccessor.getEntity();
         SkullBlockRendererAccessor.SkullRenderMode contextMode = SkullBlockRendererAccessor.getRenderMode();
+        if (contextMode == SkullBlockRendererAccessor.SkullRenderMode.OTHER && itemDisplayContext == ItemDisplayContext.GUI)
+            contextMode = SkullBlockRendererAccessor.SkullRenderMode.GUI;
 
         SkullBlockRendererHelper.clear();
         SkullBlockRendererAccessor.clear();

@@ -168,7 +168,7 @@ public class PlayerList extends AbstractList {
             Avatar avatar = AvatarManager.getAvatarForPlayer(uuid);
 
             // filter check
-            if ((!name.toLowerCase(Locale.US).contains(filter.toLowerCase(Locale.US)) && !uuid.toString().contains(filter.toLowerCase(Locale.US))) || (showFigura.isToggled() && !FiguraMod.isLocal(uuid) && (avatar == null || avatar.nbt == null)))
+            if (!matchesFilter(name, uuid) || (showFigura.isToggled() && !FiguraMod.isLocal(uuid) && (avatar == null || avatar.nbt == null)))
                 continue;
 
             // player is not missing
@@ -185,11 +185,13 @@ public class PlayerList extends AbstractList {
             element.disconnected = false;
         }
 
-        if (filter.isEmpty() && showDisconnected.isToggled()) {
+        if (showDisconnected.isToggled()) {
             for (Avatar avatar : AvatarManager.getLoadedAvatars()) {
                 UUID id = avatar.owner;
 
                 if (playerList.contains(id))
+                    continue;
+                if (!matchesFilter(avatar.entityName, id))
                     continue;
 
                 missingPlayers.remove(id);
@@ -218,6 +220,13 @@ public class PlayerList extends AbstractList {
         // select local if current selected is missing
         if (selectedEntry instanceof PlayerPermPackElement player && missingPlayers.contains(player.getOwner()))
             selectLocalPlayer();
+    }
+
+    private boolean matchesFilter(String name, UUID id) {
+        String lowerFilter = filter.toLowerCase(Locale.US);
+        return lowerFilter.isEmpty()
+                || (name != null && name.toLowerCase(Locale.US).contains(lowerFilter))
+                || (id != null && id.toString().contains(lowerFilter));
     }
 
     private void sortList() {

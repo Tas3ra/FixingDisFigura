@@ -354,7 +354,6 @@ public class AvatarManager {
 
         // clear
         clearAvatars(id);
-        FETCHED_USERS.add(id);
 
         // load
         UserData user = LOADED_USERS.computeIfAbsent(id, UserData::new);

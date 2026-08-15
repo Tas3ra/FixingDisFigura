@@ -24,6 +24,10 @@ public class UserData {
 
     public void loadData(ArrayList<Pair<String, Pair<String, UUID>>> avatars, Pair<BitSet,BitSet> badges) {
         loadBadges(badges);
+
+        if (!AvatarManager.localUploaded && FiguraMod.isLocal(id))
+            return;
+
         clear();
         for (Pair<String, Pair<String, UUID>> avatar : avatars) {
             if (!CacheAvatarLoader.checkAndLoad(avatar.getFirst(), this)) {

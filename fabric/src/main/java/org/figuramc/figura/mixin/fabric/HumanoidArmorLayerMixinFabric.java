@@ -27,8 +27,6 @@ import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.ai.attributes.Attributes;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.DyedItemColor;
 import net.minecraft.world.item.equipment.EquipmentAsset;
@@ -399,12 +397,11 @@ public abstract class HumanoidArmorLayerMixinFabric<S extends HumanoidRenderStat
 
     @Unique
     private boolean figura$isArmorForSlot(ItemStack itemStack, EquipmentSlot slot) {
-        return itemStack != null && !itemStack.isEmpty()
-                && itemStack.getItem() instanceof Item armorItem
-                && armorItem.components().has(DataComponents.EQUIPPABLE)
-                && armorItem.components().get(DataComponents.EQUIPPABLE).slot() == slot
-                && armorItem.components().has(DataComponents.ATTRIBUTE_MODIFIERS)
-                && armorItem.components().get(DataComponents.ATTRIBUTE_MODIFIERS).modifiers().stream().anyMatch(attribute -> attribute.attribute() == Attributes.ARMOR);
+        if (itemStack == null || itemStack.isEmpty())
+            return false;
+
+        Equippable equippable = itemStack.get(DataComponents.EQUIPPABLE);
+        return equippable != null && equippable.slot() == slot && equippable.assetId().isPresent();
     }
 
     @Unique

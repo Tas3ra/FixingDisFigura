@@ -81,9 +81,13 @@ public class LevelRendererMixinFabric {
 
         // first person world parts
         MultiBufferSource.BufferSource bufferSource = this.renderBuffers.bufferSource();
-        avatar.firstPersonWorldRender(e, bufferSource, stack, camera, tickDelta);
-
-        featureRenderDispatcher.renderAllFeatures();
+        TextRenderUtils.beginDeferredTextTasks();
+        try {
+            avatar.firstPersonWorldRender(e, bufferSource, stack, camera, tickDelta);
+            featureRenderDispatcher.renderAllFeatures();
+        } finally {
+            TextRenderUtils.endDeferredTextTasks();
+        }
         bufferSource.endLastBatch();
 
         // first person matrices

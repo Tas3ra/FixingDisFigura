@@ -18,12 +18,14 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
 import org.figuramc.figura.FiguraMod;
 import org.figuramc.figura.avatar.Avatar;
 import org.figuramc.figura.avatar.AvatarManager;
 import org.figuramc.figura.avatar.Badges;
 import org.figuramc.figura.config.Configs;
 import org.figuramc.figura.ducks.EntityRendererAccessor;
+import org.figuramc.figura.ducks.FiguraEntityRenderStateExtension;
 import org.figuramc.figura.ducks.FiguraSubmitCallBackExtension;
 import org.figuramc.figura.ducks.NodeCollectorExtension;
 import org.figuramc.figura.lua.api.nameplate.EntityNameplateCustomization;
@@ -39,6 +41,7 @@ import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.regex.Pattern;
 
@@ -107,14 +110,74 @@ public abstract class PlayerRendererMixin extends LivingEntityRenderer<AbstractC
 
         // badges
         FiguraMod.popPushProfiler("badges");
-        if (Minecraft.getInstance().level.getEntity(player.id) != null) { // null while dead
-			replacement = Badges.appendBadges(replacement, Minecraft.getInstance().level.getEntity(player.id).getUUID(), config > 1);
-		}
+        UUID badgeOwner = figura$getBadgeOwner(player);
+        if (badgeOwner != null)
+			replacement = Badges.appendBadges(replacement, badgeOwner, config > 1);
 
         FiguraMod.popPushProfiler("applyName");
         text = TextUtils.replaceInText(text, "\\b" + Pattern.quote(player.nameTag.getString()) + "\\b", replacement);
 
         return text;
+    }
+
+    @ModifyArg(method = "submitNameTag(Lnet/minecraft/client/renderer/entity/state/AvatarRenderState;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;Lnet/minecraft/client/renderer/state/CameraRenderState;)V", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/SubmitNodeCollector;submitNameTag(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/world/phys/Vec3;ILnet/minecraft/network/chat/Component;ZIDLnet/minecraft/client/renderer/state/CameraRenderState;)V", ordinal = 0), index = 1)
+    private Vec3 figura$adjustScoreNameplateAttachment(Vec3 attachment, @Local(argsOnly = true) AvatarRenderState playerRenderState) {
+        return figura$adjustNameplateAttachment(attachment, playerRenderState);
+    }
+
+    @ModifyArg(method = "submitNameTag(Lnet/minecraft/client/renderer/entity/state/AvatarRenderState;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;Lnet/minecraft/client/renderer/state/CameraRenderState;)V", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/SubmitNodeCollector;submitNameTag(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/world/phys/Vec3;ILnet/minecraft/network/chat/Component;ZIDLnet/minecraft/client/renderer/state/CameraRenderState;)V", ordinal = 1), index = 1)
+    private Vec3 figura$adjustPlayerNameplateAttachment(Vec3 attachment, @Local(argsOnly = true) AvatarRenderState playerRenderState) {
+        return figura$adjustNameplateAttachment(attachment, playerRenderState);
+    }
+
+    @Unique
+    private Vec3 figura$adjustNameplateAttachment(Vec3 attachment, AvatarRenderState playerRenderState) {
+        if (attachment == null || Configs.ENTITY_NAMEPLATE.value == 0 || AvatarManager.panic)
+            return attachment;
+
+        Avatar avatar = AvatarManager.getAvatar(playerRenderState);
+        if (avatar == null || avatar.renderer == null)
+            return attachment;
+
+        if (avatar.luaRuntime != null) {
+            EntityNameplateCustomization custom = avatar.luaRuntime.nameplate.ENTITY;
+            if (custom != null && custom.getPivot() != null)
+                return attachment;
+        }
+
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null)
+            return attachment;
+
+        Entity entity = minecraft.level.getEntity(playerRenderState.id);
+        if (!(entity instanceof Player))
+            return attachment;
+
+        float tickDelta = ((FiguraEntityRenderStateExtension)playerRenderState).figura$getTickDelta();
+        double modelTop = avatar.renderer.getVisibleModelTopY(entity, tickDelta);
+        if (!Double.isFinite(modelTop))
+            return attachment;
+
+        double targetAttachmentY = modelTop - 0.35d;
+        double lift = targetAttachmentY - attachment.y;
+        if (!Double.isFinite(lift) || lift <= 0.0d)
+            return attachment;
+
+        return attachment.add(0.0d, Math.min(lift, 0.75d), 0.0d);
+    }
+
+    @Unique
+    private UUID figura$getBadgeOwner(AvatarRenderState player) {
+        Minecraft minecraft = Minecraft.getInstance();
+        Entity entity = minecraft.level == null ? null : minecraft.level.getEntity(player.id);
+        if (entity != null)
+            return entity.getUUID();
+
+        if (minecraft.player != null && minecraft.player.getId() == player.id)
+            return minecraft.player.getUUID();
+
+        Avatar avatar = AvatarManager.getAvatar(player);
+        return avatar == null ? null : avatar.owner;
     }
 
     // Push for scoreboard rendering

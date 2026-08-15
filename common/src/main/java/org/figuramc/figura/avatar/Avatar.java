@@ -30,6 +30,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.phys.Vec3;
 import org.figuramc.figura.FiguraMod;
 import org.figuramc.figura.animation.Animation;
@@ -37,6 +38,7 @@ import org.figuramc.figura.animation.AnimationPlayer;
 import org.figuramc.figura.backend2.NetworkStuff;
 import org.figuramc.figura.config.Configs;
 import org.figuramc.figura.ducks.FiguraEntityRenderStateExtension;
+import org.figuramc.figura.ducks.FiguraSubmitCallBackExtension;
 import org.figuramc.figura.ducks.NodeCollectorExtension;
 import org.figuramc.figura.gui.FiguraPortraitRenderState;
 import org.figuramc.figura.lua.FiguraLuaPrinter;
@@ -437,11 +439,22 @@ public class Avatar {
     }
 
     public boolean itemRenderEvent(ItemStackAPI item, String mode, FiguraVec3 pos, FiguraVec3 rot, FiguraVec3 scale, boolean leftHanded, PoseStack stack, SubmitNodeCollector nodeCollector, int light, int overlay) {
+        return itemRenderEvent(item, mode, pos, rot, scale, leftHanded, stack, nodeCollector, light, overlay, true);
+    }
+
+    public boolean itemRenderEvent(ItemStackAPI item, String mode, FiguraVec3 pos, FiguraVec3 rot, FiguraVec3 scale, boolean leftHanded, PoseStack stack, SubmitNodeCollector nodeCollector, int light, int overlay, boolean itemSubmitOwned) {
+        return itemRenderEvent(item, mode, pos, rot, scale, leftHanded, stack, nodeCollector, light, overlay, itemSubmitOwned, null);
+    }
+
+    public boolean itemRenderEvent(ItemStackAPI item, String mode, FiguraVec3 pos, FiguraVec3 rot, FiguraVec3 scale, boolean leftHanded, PoseStack stack, SubmitNodeCollector nodeCollector, int light, int overlay, FiguraSubmitCallBackExtension submitCallbacks) {
+        return itemRenderEvent(item, mode, pos, rot, scale, leftHanded, stack, nodeCollector, light, overlay, true, submitCallbacks);
+    }
+
+    public boolean itemRenderEvent(ItemStackAPI item, String mode, FiguraVec3 pos, FiguraVec3 rot, FiguraVec3 scale, boolean leftHanded, PoseStack stack, SubmitNodeCollector nodeCollector, int light, int overlay, boolean itemSubmitOwned, FiguraSubmitCallBackExtension submitCallbacks) {
         if (!loaded || renderer == null || !renderer.interceptRendersIntoFigura) {
             return false;
         }
         Varargs result = run("ITEM_RENDER", render, item, mode, pos, rot, scale, leftHanded);
-        NodeCollectorExtension extension = (NodeCollectorExtension) nodeCollector;
 
         if(result == null)
             return false;
@@ -450,22 +463,55 @@ public class Avatar {
         copy.last().set(stack.last());
 
         boolean rendered = false;
+        List<FiguraModelPart> parts = new ArrayList<>();
         for (int i = 1; i <= result.narg(); i++) {
             if (result.arg(i).isuserdata(FiguraModelPart.class)) {
                 FiguraModelPart modelPart = (FiguraModelPart) result.arg(i).checkuserdata(FiguraModelPart.class);
 
                 boolean renderedPart = figuraItemRendered(modelPart);
                 rendered |= renderedPart;
-                if (renderedPart) {
-                    extension.submitFiguraModel(this, null, (avatar, entity, bufferSource) -> {
-                        renderItem(copy, bufferSource, modelPart, light, overlay);
-                        return null;
-                    });
-                }
+                if (renderedPart)
+                    parts.add(modelPart);
             }
 
         }
+        if (!rendered)
+            return false;
+
+        if (itemSubmitOwned && queueItemRenderOnSubmit(mode, copy, parts, light, overlay, submitCallbacks))
+            return true;
+
+        NodeCollectorExtension extension = (NodeCollectorExtension) nodeCollector;
+        for (FiguraModelPart modelPart : parts) {
+            extension.submitFiguraModel(this, null, (avatar, entity, bufferSource) -> {
+                renderItem(copy, bufferSource, modelPart, light, overlay);
+                return null;
+            });
+        }
         return rendered;
+    }
+
+    private boolean queueItemRenderOnSubmit(String mode, PoseStack stack, List<FiguraModelPart> parts, int light, int overlay, FiguraSubmitCallBackExtension submitCallbacks) {
+        FiguraSubmitCallBackExtension target = submitCallbacks;
+        if (target == null) {
+            if (mode == null)
+                return false;
+
+            ItemDisplayContext displayContext;
+            try {
+                displayContext = ItemDisplayContext.valueOf(mode);
+            } catch (IllegalArgumentException ignored) {
+                return false;
+            }
+            target = (FiguraSubmitCallBackExtension)(Object)displayContext;
+        }
+
+        target.figura$addPreRenderingCallback((bufferSource, poseStack) -> {
+            for (FiguraModelPart part : parts)
+                renderItem(stack, bufferSource, part, light, overlay);
+            return false;
+        });
+        return true;
     }
 
     public boolean playSoundEvent(String id, FiguraVec3 pos, float vol, float pitch, boolean loop, String category, String file) {
@@ -569,24 +615,30 @@ public class Avatar {
             return;
 
         EntityRenderMode prevRenderMode = renderMode;
+        boolean prevAllowMatrixUpdate = renderer.allowMatrixUpdate;
+        boolean prevUpdateLight = renderer.updateLight;
         renderMode = mode;
         boolean update = prevRenderMode != EntityRenderMode.OTHER || renderMode == EntityRenderMode.FIRST_PERSON_WORLD;
 
-        renderer.pivotCustomizations.values().clear();
-        renderer.allowMatrixUpdate = renderer.updateLight = update;
-        renderer.entity = entity;
+        try {
+            renderer.pivotCustomizations.values().clear();
+            renderer.allowMatrixUpdate = update;
+            renderer.updateLight = update;
+            renderer.entity = entity;
 
-        renderer.setupRenderer(
-                PartFilterScheme.WORLD, bufferSource, stack,
-                tickDelta, lightFallback, 1f, OverlayTexture.NO_OVERLAY,
-                false, false,
-                camX, camY, camZ
-        );
+            renderer.setupRenderer(
+                    PartFilterScheme.WORLD, bufferSource, stack,
+                    tickDelta, lightFallback, 1f, OverlayTexture.NO_OVERLAY,
+                    false, false,
+                    camX, camY, camZ
+            );
 
-        complexity.use(renderer.renderSpecialParts());
-
-        renderMode = prevRenderMode;
-        renderer.updateLight = false;
+            complexity.use(renderer.renderSpecialParts());
+        } finally {
+            renderMode = prevRenderMode;
+            renderer.allowMatrixUpdate = prevAllowMatrixUpdate;
+            renderer.updateLight = prevUpdateLight;
+        }
     }
 
     public void capeRender(Entity entity, MultiBufferSource bufferSource, PoseStack stack, int light, float tickDelta, ModelPart cloak) {
@@ -726,14 +778,27 @@ public class Avatar {
     }
 
     public synchronized boolean skullRender(PoseStack stack, MultiBufferSource bufferSource, int light, Direction direction, float yaw, boolean applySkullPlacement) {
+        return skullRender(stack, bufferSource, light, direction, yaw, applySkullPlacement, false);
+    }
+
+    public synchronized boolean skullRender(PoseStack stack, MultiBufferSource bufferSource, int light, Direction direction, float yaw, boolean applySkullPlacement, boolean guiItem) {
         FiguraRenderer renderer = this.renderer;
         if (renderer == null || !loaded || !renderer.interceptRendersIntoFigura)
             return false;
 
         stack.pushPose();
         boolean allowPivotParts = renderer.allowPivotParts;
+        EntityRenderMode previousRenderMode = renderMode;
+        boolean previousAllowMatrixUpdate = renderer.allowMatrixUpdate;
+        boolean previousUpdateLight = renderer.updateLight;
 
         try {
+            if (guiItem) {
+                renderMode = EntityRenderMode.MINECRAFT_GUI;
+                renderer.allowMatrixUpdate = false;
+                renderer.updateLight = false;
+            }
+
             if (applySkullPlacement) {
                 if (direction == null)
                     stack.translate(0.5d, 0d, 0.5d);
@@ -759,7 +824,10 @@ public class Avatar {
             // head
             return comp > 0 || headRender(stack, bufferSource, light, true);
         } finally {
+            renderMode = previousRenderMode;
             renderer.allowPivotParts = allowPivotParts;
+            renderer.allowMatrixUpdate = previousAllowMatrixUpdate;
+            renderer.updateLight = previousUpdateLight;
             stack.popPose();
         }
     }
@@ -834,34 +902,42 @@ public class Avatar {
         return true;
     }
 
-    public boolean renderHeadForPortrait(MultiBufferSource.BufferSource buffer, PoseStack stack, int light, float modelScale, boolean upsideDown) {
+    public synchronized boolean renderHeadForPortrait(MultiBufferSource.BufferSource buffer, PoseStack stack, int light, float modelScale, boolean upsideDown) {
+        FiguraRenderer renderer = this.renderer;
+        if (renderer == null || !loaded)
+            return false;
+
+        boolean allowPivotParts = renderer.allowPivotParts;
+        boolean paperdoll = UIHelper.paperdoll;
+        float dollScale = UIHelper.dollScale;
+
         stack.pushPose();
-        stack.scale(2, 2, 2); // i have no clue why it's exactly 2x smaller than it should be
-        //stack.scale(modelScale, modelScale * (upsideDown ? 1 : -1), modelScale);
-        renderer.allowPivotParts = false;
+        try {
+            stack.scale(2, 2, 2); // i have no clue why it's exactly 2x smaller than it should be
+            //stack.scale(modelScale, modelScale * (upsideDown ? 1 : -1), modelScale);
+            renderer.allowPivotParts = false;
 
-        UIHelper.paperdoll = true;
-        UIHelper.dollScale = 16f;
+            UIHelper.paperdoll = true;
+            UIHelper.dollScale = 16f;
 
-        renderer.setupRenderer(
-                PartFilterScheme.PORTRAIT, buffer, stack,
-                1f, light, 1f, OverlayTexture.NO_OVERLAY,
-                false, false
-        );
+            renderer.setupRenderer(
+                    PartFilterScheme.PORTRAIT, buffer, stack,
+                    1f, light, 1f, OverlayTexture.NO_OVERLAY,
+                    false, false
+            );
 
-        // render
-        int comp = renderer.renderSpecialParts();
-        boolean ret = comp > 0 || headRender(stack, buffer, light, false);
+            // render
+            int comp = renderer.renderSpecialParts();
+            return comp > 0 || headRender(stack, buffer, light, false);
+        } finally {
+            // after render
+            stack.popPose();
+            buffer.endBatch();
+            UIHelper.paperdoll = paperdoll;
+            UIHelper.dollScale = dollScale;
 
-        // after render
-        stack.popPose();
-        buffer.endBatch();
-        UIHelper.paperdoll = false;
-
-        renderer.allowPivotParts = true;
-
-        // return
-        return ret;
+            renderer.allowPivotParts = allowPivotParts;
+        }
     }
 
     public boolean renderArrow(PoseStack stack, MultiBufferSource bufferSource, float delta, int light) {
@@ -917,20 +993,25 @@ public class Avatar {
             return false;
 
         stack.pushPose();
-        stack.mulPose(Axis.ZP.rotationDegrees(180f));
+        FiguraModelPart previousItemToRender = renderer.itemToRender;
 
-        renderer.setupRenderer(
-                PartFilterScheme.ITEM, bufferSource, stack,
-                1f, light, 1f, overlay,
-                false, false
-        );
+        try {
+            stack.mulPose(Axis.ZP.rotationDegrees(180f));
 
-        renderer.itemToRender = part;
+            renderer.setupRenderer(
+                    PartFilterScheme.ITEM, bufferSource, stack,
+                    1f, light, 1f, overlay,
+                    false, false
+            );
 
-        int ret = renderer.renderSpecialParts();
+            renderer.itemToRender = part;
 
-        stack.popPose();
-        return ret > 0;
+            int ret = renderer.renderSpecialParts();
+            return ret > 0;
+        } finally {
+            renderer.itemToRender = previousItemToRender;
+            stack.popPose();
+        }
     }
 
     public boolean figuraItemRendered(FiguraModelPart part) {
@@ -938,15 +1019,18 @@ public class Avatar {
             return false;
         // save current filter scheme, set it to item, get complexity, and then set it back
         PartFilterScheme partFilterScheme = renderer.currentFilterScheme;
-        renderer.currentFilterScheme = PartFilterScheme.ITEM;
-        renderer.itemToRender = part;
-        int ret = renderer.getComplexity();
-        renderer.currentFilterScheme = partFilterScheme;
-
-        return ret > 0;
+        FiguraModelPart previousItemToRender = renderer.itemToRender;
+        try {
+            renderer.currentFilterScheme = PartFilterScheme.ITEM;
+            renderer.itemToRender = part;
+            int ret = renderer.getComplexity();
+            return ret > 0;
+        } finally {
+            renderer.currentFilterScheme = partFilterScheme;
+            renderer.itemToRender = previousItemToRender;
+        }
     }
 
-    private static final PartCustomization PIVOT_PART_RENDERING_CUSTOMIZATION = new PartCustomization();
     public synchronized boolean hasPivotPart(ParentType parent) {
         if (renderer == null || !loaded || !parent.isPivot)
             return false;
@@ -967,10 +1051,11 @@ public class Avatar {
         int i = 0;
         while (!queue.isEmpty() && i++ < 1000) { // limit of 1000 pivot part renders, just in case something goes infinitely somehow
             Pair<FiguraMat4, FiguraMat3> matrixPair = queue.poll();
-            PIVOT_PART_RENDERING_CUSTOMIZATION.setPositionMatrix(matrixPair.getFirst());
-            PIVOT_PART_RENDERING_CUSTOMIZATION.setNormalMatrix(matrixPair.getSecond());
-            PIVOT_PART_RENDERING_CUSTOMIZATION.needsMatrixRecalculation = false;
-            PoseStack stack = PIVOT_PART_RENDERING_CUSTOMIZATION.copyIntoGlobalPoseStack();
+            PartCustomization customization = new PartCustomization();
+            customization.setPositionMatrix(matrixPair.getFirst());
+            customization.setNormalMatrix(matrixPair.getSecond());
+            customization.needsMatrixRecalculation = false;
+            PoseStack stack = customization.copyIntoGlobalPoseStack();
             consumer.accept(stack);
         }
 

@@ -22,6 +22,7 @@ import org.figuramc.figura.FiguraMod;
 import org.figuramc.figura.avatar.Avatar;
 import org.figuramc.figura.avatar.AvatarManager;
 import org.figuramc.figura.ducks.FiguraItemStackRenderStateExtension;
+import org.figuramc.figura.ducks.FiguraSubmitCallBackExtension;
 import org.figuramc.figura.ducks.SkullBlockRendererAccessor;
 import org.figuramc.figura.lua.api.vanilla_model.VanillaModelPart;
 import org.figuramc.figura.lua.api.world.ItemStackAPI;
@@ -117,32 +118,51 @@ public abstract class ItemInHandRendererMixin {
     private void clearFirstPersonItemState(AbstractClientPlayer player, float tickDelta, float pitch, InteractionHand hand, float swingProgress, ItemStack item, float equipProgress, PoseStack matrices, SubmitNodeCollector submitNodeCollector, int light, CallbackInfo ci) {
         figura$hideFirstPersonItem = false;
         figura$firstPersonItemDisplayContext = null;
+        SkullBlockRendererAccessor.clear();
     }
 
     @WrapOperation(method = "renderItem", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/item/ItemStackRenderState;submit(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;III)V"))
     private void renderFirstPersonItemReplacement(ItemStackRenderState instance, PoseStack matrices, SubmitNodeCollector submitNodeCollector, int light, int overlay, int outlineColor, Operation<Void> original, @Local(argsOnly = true) LivingEntity entity, @Local(argsOnly = true) ItemStack stack) {
-        FiguraItemStackRenderStateExtension extension = (FiguraItemStackRenderStateExtension) instance;
-        ItemStack figuraStack = extension.figura$getItemStack();
-        if (figuraStack == null)
-            figuraStack = stack;
+        try {
+            FiguraItemStackRenderStateExtension extension = (FiguraItemStackRenderStateExtension) instance;
+            ItemStack figuraStack = extension.figura$getItemStack();
+            if (figuraStack == null)
+                figuraStack = stack;
 
-        ItemTransform transform = extension.figura$getItemTransform();
-        Avatar localAvatar = avatar != null ? avatar : AvatarManager.getAvatar(entity);
-        boolean renderedReplacement = figura$renderFirstPersonItemReplacement(localAvatar, figuraStack, extension.figura$getDisplayContext(), transform, matrices, submitNodeCollector, light, overlay);
-        if (!renderedReplacement && !figura$hideFirstPersonItem)
-            original.call(instance, matrices, submitNodeCollector, light, overlay, outlineColor);
+            ItemTransform transform = extension.figura$getItemTransform();
+            Avatar localAvatar = avatar != null ? avatar : AvatarManager.getAvatar(entity);
+            boolean skullItem = figura$isSkullItem(figuraStack);
+            boolean renderedReplacement = figura$renderFirstPersonItemReplacement(
+                    localAvatar,
+                    figuraStack,
+                    extension.figura$getDisplayContext(),
+                    transform,
+                    matrices,
+                    submitNodeCollector,
+                    light,
+                    overlay,
+                    !skullItem,
+                    skullItem ? null : (FiguraSubmitCallBackExtension)(Object)instance
+            );
+            if (!skullItem && renderedReplacement)
+                original.call(instance, matrices, submitNodeCollector, light, overlay, outlineColor);
+            else if (!renderedReplacement && !figura$hideFirstPersonItem)
+                original.call(instance, matrices, submitNodeCollector, light, overlay, outlineColor);
+        } finally {
+            SkullBlockRendererAccessor.clear();
+        }
     }
 
     @Inject(method = "renderMap(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;ILnet/minecraft/world/item/ItemStack;)V", at = @At("HEAD"), cancellable = true)
     private void renderFirstPersonMapReplacement(PoseStack matrices, SubmitNodeCollector submitNodeCollector, int light, ItemStack stack, CallbackInfo ci) {
         ItemDisplayContext context = figura$firstPersonItemDisplayContext != null ? figura$firstPersonItemDisplayContext : ItemDisplayContext.FIRST_PERSON_RIGHT_HAND;
-        boolean renderedReplacement = figura$renderFirstPersonItemReplacement(avatar, stack, context, ItemTransform.NO_TRANSFORM, matrices, submitNodeCollector, light, 0);
+        boolean renderedReplacement = figura$renderFirstPersonItemReplacement(avatar, stack, context, ItemTransform.NO_TRANSFORM, matrices, submitNodeCollector, light, 0, false, null);
         if (renderedReplacement || figura$hideFirstPersonItem)
             ci.cancel();
     }
 
     @Unique
-    private boolean figura$renderFirstPersonItemReplacement(Avatar localAvatar, ItemStack itemStack, ItemDisplayContext displayContext, ItemTransform transform, PoseStack matrices, SubmitNodeCollector submitNodeCollector, int light, int overlay) {
+    private boolean figura$renderFirstPersonItemReplacement(Avatar localAvatar, ItemStack itemStack, ItemDisplayContext displayContext, ItemTransform transform, PoseStack matrices, SubmitNodeCollector submitNodeCollector, int light, int overlay, boolean itemSubmitOwned, FiguraSubmitCallBackExtension submitCallbacks) {
         return localAvatar != null && itemStack != null && localAvatar.itemRenderEvent(
                 ItemStackAPI.verify(itemStack),
                 displayContext.name(),
@@ -153,13 +173,15 @@ public abstract class ItemInHandRendererMixin {
                 matrices,
                 submitNodeCollector,
                 light,
-                overlay
+                overlay,
+                itemSubmitOwned,
+                submitCallbacks
         );
     }
 
     @Inject(method = "renderItem", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/item/ItemStackRenderState;submit(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;III)V"))
     private void renderItem(LivingEntity entity, ItemStack stack, ItemDisplayContext itemDisplayContext, PoseStack matrices, SubmitNodeCollector submitNodeCollector, int light, CallbackInfo ci) {
-        if (stack.getItem() instanceof BlockItem bl && bl.getBlock() instanceof AbstractSkullBlock) {
+        if (figura$isSkullItem(stack)) {
             SkullBlockRendererAccessor.clear();
             SkullBlockRendererAccessor.setEntity(entity);
             SkullBlockRendererAccessor.setRenderMode(switch (itemDisplayContext) {
@@ -171,5 +193,10 @@ public abstract class ItemInHandRendererMixin {
                         : SkullBlockRendererAccessor.SkullRenderMode.THIRD_PERSON_RIGHT_HAND; 
             });
         }
+    }
+
+    @Unique
+    private boolean figura$isSkullItem(ItemStack stack) {
+        return stack != null && stack.getItem() instanceof BlockItem blockItem && blockItem.getBlock() instanceof AbstractSkullBlock;
     }
 }

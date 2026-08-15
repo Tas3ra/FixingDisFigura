@@ -8,6 +8,7 @@ import net.minecraft.client.gui.components.debug.DebugScreenEntries;
 import net.minecraft.client.renderer.*;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
@@ -38,7 +39,6 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
 
     public static final FiguraMat4 CAMERA_POS_TO_WORLD_MATRIX = FiguraMat4.of();
 
-    private static final PartCustomization pivotOffsetter = new PartCustomization();
     protected static final VertexBuffer VERTEX_BUFFER = new VertexBuffer();
 
     public ImmediateFiguraRenderer(Avatar avatar) {
@@ -122,7 +122,8 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
 
         // iris fix
         int irisConfig = UIHelper.paperdoll || !ClientAPI.hasShaderPackMod() ? 0 : Configs.IRIS_COMPATIBILITY_FIX.value;
-        doIrisEmissiveFix = (irisConfig >= 2 && ClientAPI.hasShaderPack()) || (avatar.renderMode != EntityRenderMode.RENDER && avatar.renderMode != EntityRenderMode.WORLD);
+        boolean worldLikeRender = avatar.renderMode == EntityRenderMode.WORLD || avatar.renderMode == EntityRenderMode.FIRST_PERSON_WORLD;
+        doIrisEmissiveFix = (irisConfig >= 2 && ClientAPI.hasShaderPack()) || (avatar.renderMode != EntityRenderMode.RENDER && !worldLikeRender);
         offsetRenderLayers = irisConfig >= 1;
 
         // custom textures
@@ -299,6 +300,7 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
             custom.normalMatrix.set(normalCopy);
         }
 
+        boolean previousUpdateLight = updateLight;
         if (thisPassedPredicate) {
             // recalculate world matrices
             FiguraMod.popPushProfiler("worldMatrices");
@@ -312,7 +314,6 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
             Level l;
             if (custom.light != null) {
                 updateLight = false;
-                pivotOffsetter.light = custom.light;
             }
             else if (updateLight && (l = Minecraft.getInstance().level) != null) {
                 FiguraVec3 pos = part.savedPartToWorldMat.apply(0d, 0d, 0d);
@@ -320,11 +321,6 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
                 int sky = l.getBrightness(LightLayer.SKY, pos.asBlockPos());
                 customizationStack.peek().light = LightTexture.pack(block, sky);
             }
-
-            if (custom.alpha != null)
-                pivotOffsetter.alpha = custom.alpha;
-            if (custom.overlay != null)
-                pivotOffsetter.overlay = custom.overlay;
         }
 
         // mid render function
@@ -347,48 +343,59 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
             if (renderPivot || renderTasks || renderPivotParts) {
                 // fix pivots
                 FiguraMod.pushProfiler("fixMatricesPivot");
+                PartCustomization prePivot = customizationStack.peek();
+                int taskLight = prePivot.light != null ? prePivot.light : LightTexture.FULL_BRIGHT;
+                int taskOverlay = prePivot.overlay != null ? prePivot.overlay : OverlayTexture.NO_OVERLAY;
 
                 FiguraVec3 pivot = custom.getPivot().copy().add(custom.getOffsetPivot());
+                PartCustomization pivotOffsetter = new PartCustomization();
                 pivotOffsetter.setPos(pivot);
                 pivotOffsetter.recalculate();
                 customizationStack.push(pivotOffsetter);
+                try {
 
-                PartCustomization peek = customizationStack.peek();
+                    PartCustomization peek = customizationStack.peek();
 
-                // render pivot indicators
-                if (renderPivot) {
-                    FiguraMod.popPushProfiler("renderPivotCube");
-                    renderPivot(part, peek);
-                }
-
-                // render tasks
-                if (renderTasks) {
-                    FiguraMod.popPushProfiler("renderTasks");
-                    int light = peek.light;
-                    int overlay = peek.overlay;
-                    interceptRendersIntoFigura = false;
-                    for (RenderTask task : part.renderTasks.values()) {
-                        if (!task.shouldRender())
-                            continue;
-                        int neededComplexity = task.getComplexity();
-                        if (neededComplexity > remainingComplexity[0])
-                            continue;
-                        FiguraMod.pushProfiler(task.getName());
-                        task.render(customizationStack, bufferSource, light, overlay);
-                        remainingComplexity[0] -= neededComplexity;
-                        FiguraMod.popProfiler();
+                    // render pivot indicators
+                    if (renderPivot) {
+                        FiguraMod.popPushProfiler("renderPivotCube");
+                        renderPivot(part, peek);
                     }
-                    interceptRendersIntoFigura = true;
-                }
 
-                // render pivot parts
-                if (renderPivotParts && part.parentType.isPivot) {
-                    FiguraMod.popPushProfiler("savePivotParts");
-                    savePivotTransform(part.parentType, peek);
-                }
+                    // render tasks
+                    if (renderTasks) {
+                        FiguraMod.popPushProfiler("renderTasks");
+                        boolean previousIntercept = interceptRendersIntoFigura;
+                        interceptRendersIntoFigura = false;
+                        try {
+                            for (RenderTask task : part.renderTasks.values()) {
+                                if (!task.shouldRender())
+                                    continue;
+                                int neededComplexity = task.getComplexity();
+                                if (neededComplexity > remainingComplexity[0])
+                                    continue;
+                                FiguraMod.pushProfiler(task.getName());
+                                try {
+                                    task.render(customizationStack, bufferSource, taskLight, taskOverlay);
+                                    remainingComplexity[0] -= neededComplexity;
+                                } finally {
+                                    FiguraMod.popProfiler();
+                                }
+                            }
+                        } finally {
+                            interceptRendersIntoFigura = previousIntercept;
+                        }
+                    }
 
-                customizationStack.pop();
-                FiguraMod.popProfiler();
+                    // render pivot parts
+                    if (renderPivotParts && part.parentType.isPivot) {
+                        FiguraMod.popPushProfiler("savePivotParts");
+                        savePivotTransform(part.parentType, peek);
+                    }
+                } finally {
+                    customizationStack.pop();
+                    FiguraMod.popProfiler();
+                }
             }
         }
 
@@ -412,6 +419,7 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
         }
 
         // pop
+        updateLight = previousUpdateLight;
         customizationStack.pop();
         FiguraMod.popProfiler(2);
 
@@ -604,11 +612,15 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
 
             if (part.parentType.isPivot && allowPivotParts) {
                 FiguraVec3 pivot = custom.getPivot().copy().add(custom.getOffsetPivot());
+                PartCustomization pivotOffsetter = new PartCustomization();
                 pivotOffsetter.setPos(pivot);
                 pivotOffsetter.recalculate();
                 customizationStack.push(pivotOffsetter);
-                savePivotTransform(part.parentType, customizationStack.peek());
-                customizationStack.pop();
+                try {
+                    savePivotTransform(part.parentType, customizationStack.peek());
+                } finally {
+                    customizationStack.pop();
+                }
             }
         }
 

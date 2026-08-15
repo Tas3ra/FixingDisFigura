@@ -2,6 +2,7 @@ package org.figuramc.figura.mixin.render.renderers;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.block.model.ItemTransform;
 import net.minecraft.client.renderer.item.ItemStackRenderState;
@@ -89,6 +90,27 @@ public class ItemStackRenderStateMixin implements FiguraItemStackRenderStateExte
     @Override
     public List<BiFunction<MultiBufferSource, PoseStack, Boolean>> figura$getPreRenderingCallbacks() {
         return figura$preRenderingCallback;
+    }
+
+    @Inject(method = "submit", at = @At("HEAD"))
+    private void figura$pushItemCallbacks(PoseStack poseStack, SubmitNodeCollector submitNodeCollector, int light, int overlay, int outlineColor, CallbackInfo ci) {
+        if (figura$preRenderingCallback.isEmpty() && figura$postRenderingCallback.isEmpty())
+            return;
+
+        FiguraSubmitCallBackExtension contextCallbacks = (FiguraSubmitCallBackExtension)(Object)displayContext;
+        for (var callback : new ArrayList<>(figura$preRenderingCallback))
+            contextCallbacks.figura$addPreRenderingCallback(callback);
+        for (var callback : new ArrayList<>(figura$postRenderingCallback))
+            contextCallbacks.figura$addPostRenderingCallback(callback);
+        figura$preRenderingCallback.clear();
+        figura$postRenderingCallback.clear();
+    }
+
+    @Inject(method = "submit", at = @At("RETURN"))
+    private void figura$clearUnclaimedItemCallbacks(PoseStack poseStack, SubmitNodeCollector submitNodeCollector, int light, int overlay, int outlineColor, CallbackInfo ci) {
+        FiguraSubmitCallBackExtension contextCallbacks = (FiguraSubmitCallBackExtension)(Object)displayContext;
+        contextCallbacks.figura$getPreRenderingCallbacks().clear();
+        contextCallbacks.figura$getPostRenderingCallbacks().clear();
     }
 
     @Inject(method = "clear", at = @At("HEAD"))

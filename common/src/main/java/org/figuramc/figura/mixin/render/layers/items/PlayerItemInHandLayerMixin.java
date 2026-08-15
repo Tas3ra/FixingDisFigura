@@ -4,7 +4,6 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.model.ArmedModel;
 import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.model.HeadedModel;
-import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.block.model.ItemTransform;
 import net.minecraft.client.renderer.entity.RenderLayerParent;
@@ -18,7 +17,7 @@ import net.minecraft.world.item.ItemStack;
 import org.figuramc.figura.avatar.Avatar;
 import org.figuramc.figura.avatar.AvatarManager;
 import org.figuramc.figura.ducks.FiguraItemStackRenderStateExtension;
-import org.figuramc.figura.ducks.NodeCollectorExtension;
+import org.figuramc.figura.ducks.FiguraSubmitCallBackExtension;
 import org.figuramc.figura.lua.api.world.ItemStackAPI;
 import org.figuramc.figura.math.vector.FiguraVec3;
 import org.figuramc.figura.model.ParentType;
@@ -73,14 +72,10 @@ public abstract class PlayerItemInHandLayerMixin <S extends AvatarRenderState, M
             stack.scale(s, s, s);
             stack.translate(0, 0, 7 / 16f);
             ItemTransform transform = ((FiguraItemStackRenderStateExtension)itemStackRenderState).figura$getItemTransform();
-            NodeCollectorExtension nodeCollectorExtension = (NodeCollectorExtension) submitNodeCollector;
-            nodeCollectorExtension.submitFiguraModel(av, avatarRenderState, (avatar, entityState, multibufferSource) -> {
-                ItemStack figuraStack = ((FiguraItemStackRenderStateExtension)itemStackRenderState).figura$getItemStack();
-                if (figuraStack == null || !avatar.itemRenderEvent(ItemStackAPI.verify(figuraStack), ((FiguraItemStackRenderStateExtension)itemStackRenderState).figura$getDisplayContext().name(), FiguraVec3.fromVec3f(transform.translation()), FiguraVec3.of(transform.rotation().z(), transform.rotation().y(), transform.rotation().x()), FiguraVec3.fromVec3f(transform.scale()), ((FiguraItemStackRenderStateExtension) itemStackRenderState).figura$isLeftHanded(), stack, submitNodeCollector, light, OverlayTexture.NO_OVERLAY))
-                    itemStackRenderState.submit(stack, submitNodeCollector, light, OverlayTexture.NO_OVERLAY, entityState.outlineColor);
-
-                return null;
-            });
+            ItemStack figuraStack = ((FiguraItemStackRenderStateExtension)itemStackRenderState).figura$getItemStack();
+            if (figuraStack != null)
+                av.itemRenderEvent(ItemStackAPI.verify(figuraStack), ((FiguraItemStackRenderStateExtension)itemStackRenderState).figura$getDisplayContext().name(), FiguraVec3.fromVec3f(transform.translation()), FiguraVec3.of(transform.rotation().z(), transform.rotation().y(), transform.rotation().x()), FiguraVec3.fromVec3f(transform.scale()), ((FiguraItemStackRenderStateExtension) itemStackRenderState).figura$isLeftHanded(), stack, submitNodeCollector, light, OverlayTexture.NO_OVERLAY, (FiguraSubmitCallBackExtension)(Object)itemStackRenderState);
+            itemStackRenderState.submit(stack, submitNodeCollector, light, OverlayTexture.NO_OVERLAY, avatarRenderState.outlineColor);
 
         })) {
             figura$renderState = null;

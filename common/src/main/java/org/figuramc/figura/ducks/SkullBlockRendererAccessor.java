@@ -40,6 +40,7 @@ public abstract class SkullBlockRendererAccessor {
     }
 
     public enum SkullRenderMode {
+        GUI,
         HEAD,
         FIRST_PERSON_LEFT_HAND,
         FIRST_PERSON_RIGHT_HAND,

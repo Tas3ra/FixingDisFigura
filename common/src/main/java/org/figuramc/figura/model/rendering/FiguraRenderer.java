@@ -15,6 +15,7 @@ import net.minecraft.world.phys.Vec3;
 import org.figuramc.figura.avatar.Avatar;
 import org.figuramc.figura.math.matrix.FiguraMat3;
 import org.figuramc.figura.math.matrix.FiguraMat4;
+import org.figuramc.figura.math.vector.FiguraVec3;
 import org.figuramc.figura.model.FiguraModelPart;
 import org.figuramc.figura.model.ParentType;
 import org.figuramc.figura.model.VanillaModelData;
@@ -143,6 +144,38 @@ public abstract class FiguraRenderer {
     public abstract int renderSpecialParts();
     public abstract void updateMatrices();
 
+    public synchronized double getVisibleModelTopY(Entity entity, float tickDelta) {
+        if (root == null || entity == null)
+            return Double.NaN;
+
+        double[] top = {Double.NEGATIVE_INFINITY};
+        collectVisibleModelTopY(root, true, top);
+
+        if (!Double.isFinite(top[0]))
+            return Double.NaN;
+
+        return top[0] - entity.getPosition(tickDelta).y;
+    }
+
+    private void collectVisibleModelTopY(FiguraModelPart part, boolean previousSucceeded, double[] top) {
+        Boolean thisPassedPredicate = PartFilterScheme.MODEL.test(part.parentType, previousSucceeded);
+        if (thisPassedPredicate == null || !part.customization.visible)
+            return;
+
+        if (thisPassedPredicate) {
+            for (List<Vertex> vertices : part.vertices.values()) {
+                for (Vertex vertex : vertices) {
+                    FiguraVec3 pos = part.savedPartToWorldMat.apply((double) vertex.x, (double) vertex.y, (double) vertex.z);
+                    if (Double.isFinite(pos.y))
+                        top[0] = Math.max(top[0], pos.y);
+                }
+            }
+        }
+
+        for (FiguraModelPart child : part.children)
+            collectVisibleModelTopY(child, thisPassedPredicate, top);
+    }
+
     protected synchronized void clean() {
         Set<FiguraTexture> texturesToCloseFromRenderThread = new LinkedHashSet<>(textures.values());
         for (FiguraTextureSet set : textureSets) {
@@ -179,17 +212,20 @@ public abstract class FiguraRenderer {
 
     public void sortParts() {
         separatedParts.clear();
-        _sortParts(root);
+        _sortParts(root, ParentType.None);
     }
 
-    private void _sortParts(FiguraModelPart part) {
+    private void _sortParts(FiguraModelPart part, ParentType activeSeparateParent) {
         if (part.parentType.isSeparate) {
-            List<FiguraModelPart> list = separatedParts.computeIfAbsent(part.parentType, parentType -> new ArrayList<>());
-            list.add(part);
+            if (part.parentType != activeSeparateParent) {
+                List<FiguraModelPart> list = separatedParts.computeIfAbsent(part.parentType, parentType -> new ArrayList<>());
+                list.add(part);
+            }
+            activeSeparateParent = part.parentType;
         }
 
         for (FiguraModelPart child : part.children)
-            _sortParts(child);
+            _sortParts(child, activeSeparateParent);
     }
 
     /**

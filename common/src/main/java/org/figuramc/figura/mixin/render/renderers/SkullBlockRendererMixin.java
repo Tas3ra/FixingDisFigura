@@ -70,6 +70,14 @@ public abstract class SkullBlockRendererMixin implements BlockEntityRenderer<Sku
         if (localAvatar == null || localAvatar.permissions.get(Permissions.CUSTOM_SKULL) == 0)
             return;
 
+        if (figura$isUnownedItemRender(localBlock, localItem, localEntity, localMode))
+            return;
+
+        if (localMode == SkullBlockRendererAccessor.SkullRenderMode.GUI) {
+            figura$submitGuiSkull(localAvatar, localBlock, localItem, localEntity, stack, submitNodeCollector, light, direction, yaw, model);
+            return;
+        }
+
         float tickDelta = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(true);
 
         FiguraSubmitCallBackExtension modelExtension = (FiguraSubmitCallBackExtension) model;
@@ -83,7 +91,7 @@ public abstract class SkullBlockRendererMixin implements BlockEntityRenderer<Sku
             BlockStateAPI b = localBlock == null ? null : new BlockStateAPI(localBlock.blockState, localBlock.blockPos);
             ItemStackAPI i = localItem != null ? ItemStackAPI.verify(localItem) : null;
             EntityAPI<?> e = localEntity != null ? EntityAPI.wrap(localEntity) : null;
-            String m = localMode.name();
+            String m = localMode == SkullBlockRendererAccessor.SkullRenderMode.GUI ? SkullBlockRendererAccessor.SkullRenderMode.OTHER.name() : localMode.name();
 
             FiguraMod.pushProfiler(localBlock != null ? localBlock.blockPos.toString() : String.valueOf(i));
 
@@ -92,12 +100,55 @@ public abstract class SkullBlockRendererMixin implements BlockEntityRenderer<Sku
 
             // render skull :3
             FiguraMod.popPushProfiler("render");
-            if (bool || localAvatar.skullRender(poseStack, bufferSource, light, direction, yaw, false))
+            boolean guiItem = localMode == SkullBlockRendererAccessor.SkullRenderMode.GUI;
+            if (bool || localAvatar.skullRender(poseStack, bufferSource, light, direction, yaw, false, guiItem))
                 return false;
 
             FiguraMod.popProfiler(5);
             return true;
         });
+    }
+
+    @Unique
+    private static boolean figura$isUnownedItemRender(SkullBlockRenderState block, ItemStack item, Entity entity, SkullBlockRendererAccessor.SkullRenderMode mode) {
+        return mode == SkullBlockRendererAccessor.SkullRenderMode.OTHER && block == null && entity == null && item != null;
+    }
+
+    @Unique
+    private static void figura$submitGuiSkull(Avatar localAvatar, SkullBlockRenderState localBlock, ItemStack localItem, Entity localEntity, PoseStack stack, SubmitNodeCollector submitNodeCollector, int light, Direction direction, float yaw, SkullModelBase model) {
+        PoseStack guiStack = new PoseStack();
+        guiStack.last().set(stack.last());
+        boolean[] rendered = {false};
+
+        ((NodeCollectorExtension) submitNodeCollector).submitFiguraModel(localAvatar, null, (avatar, entity, bufferSource) -> {
+            FiguraMod.pushProfiler(FiguraMod.MOD_ID);
+            FiguraMod.pushProfiler(localAvatar);
+            FiguraMod.pushProfiler("skullGuiRender");
+
+            BlockStateAPI b = localBlock == null ? null : new BlockStateAPI(localBlock.blockState, localBlock.blockPos);
+            ItemStackAPI i = localItem != null ? ItemStackAPI.verify(localItem) : null;
+            EntityAPI<?> e = localEntity != null ? EntityAPI.wrap(localEntity) : null;
+
+            FiguraMod.pushProfiler(localBlock != null ? localBlock.blockPos.toString() : String.valueOf(i));
+            FiguraMod.pushProfiler("event");
+            boolean bool = localAvatar.skullRenderEvent(Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(true), b, i, e, SkullBlockRendererAccessor.SkullRenderMode.OTHER.name());
+
+            FiguraMod.popPushProfiler("render");
+            rendered[0] = bool || localAvatar.skullRender(guiStack, bufferSource, light, direction, yaw, true, true);
+
+            FiguraMod.popProfiler(5);
+            return null;
+        });
+
+        FiguraSubmitCallBackExtension modelExtension = (FiguraSubmitCallBackExtension) model;
+        modelExtension.figura$addPreRenderingCallback((bufferSource, poseStack) -> !rendered[0]);
+    }
+
+    @Inject(at = @At("RETURN"), method = "submitSkull")
+    private static void figura$clearUnclaimedSkullCallbacks(Direction direction, float yaw, float animationProgress, PoseStack stack, SubmitNodeCollector submitNodeCollector, int light, SkullModelBase model, RenderType renderLayer, int outlineColor, ModelFeatureRenderer.CrumblingOverlay crumblingOverlay, CallbackInfo ci) {
+        FiguraSubmitCallBackExtension modelExtension = (FiguraSubmitCallBackExtension) model;
+        modelExtension.figura$getPreRenderingCallbacks().clear();
+        modelExtension.figura$getPostRenderingCallbacks().clear();
     }
 
     @Inject(at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/blockentity/SkullBlockRenderer;submitSkull(Lnet/minecraft/core/Direction;FFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;ILnet/minecraft/client/model/object/skull/SkullModelBase;Lnet/minecraft/client/renderer/rendertype/RenderType;ILnet/minecraft/client/renderer/feature/ModelFeatureRenderer$CrumblingOverlay;)V"), method = "submit(Lnet/minecraft/client/renderer/blockentity/state/SkullBlockRenderState;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;Lnet/minecraft/client/renderer/state/CameraRenderState;)V")

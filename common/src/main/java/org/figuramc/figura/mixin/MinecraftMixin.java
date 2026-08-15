@@ -178,10 +178,13 @@ public abstract class MinecraftMixin {
                 return;
         }
 
-        if (this.player != null && this.hitResult instanceof BlockHitResult blockHit && blockHit.getType() == HitResult.Type.BLOCK) {
+        HitResult blockTarget = this.hitResult;
+        if (!(blockTarget instanceof BlockHitResult blockHit && blockHit.getType() == HitResult.Type.BLOCK) && this.cameraEntity != null)
+            blockTarget = this.cameraEntity.pick(20d, tickDelta, false);
+
+        if (this.player != null && blockTarget instanceof BlockHitResult blockHit && blockHit.getType() == HitResult.Type.BLOCK) {
             if (this.player.level().getBlockEntity(blockHit.getBlockPos()) instanceof SkullBlockEntity skullBlockEntity) {
-                Vec3 pos = Vec3.atCenterOf(blockHit.getBlockPos()).add(0d, 0.75d, 0d);
-                if (figura$setPopupProfileTarget(skullBlockEntity.getOwnerProfile(), pos))
+                if (PopupMenu.setSkullTarget(skullBlockEntity))
                     return;
             }
         }

@@ -51,5 +51,6 @@ public class ItemFeatureRendererMixin {
         FiguraSubmitCallBackExtension callBackExtension = (FiguraSubmitCallBackExtension) (Object) itemSubmit;
         for (var callback : new ArrayList<>(callBackExtension.figura$getPostRenderingCallbacks()))
             callback.run();
+        callBackExtension.figura$getPostRenderingCallbacks().clear();
     }
 }

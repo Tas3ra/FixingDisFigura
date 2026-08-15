@@ -62,9 +62,12 @@ public class TextTask extends RenderTask {
         boolean inheritFullBright = customization.light == null && parentPrimaryRenderType != null && parentPrimaryRenderType.isFullBright();
 
         stack.push(customization);
-        PoseStack poseStack = stack.peek().copyIntoGlobalPoseStack();
-        render(poseStack, buffer, inheritFullBright ? LightTexture.FULL_BRIGHT : light, overlay);
-        stack.pop();
+        try {
+            PoseStack poseStack = stack.peek().copyIntoGlobalPoseStack();
+            render(poseStack, buffer, inheritFullBright ? LightTexture.FULL_BRIGHT : light, overlay);
+        } finally {
+            stack.pop();
+        }
     }
 
     @Override

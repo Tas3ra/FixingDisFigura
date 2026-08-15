@@ -151,6 +151,10 @@ public class NameTagFeatureRenderer$StorageMixin implements NameTagFeatureRender
 
             return figura$addNameplateSubmits(instance, original, submit, submit.pose(), color, backgroundColor, light);
         }
+
+        if (figura$shouldSplitSubmittedNameplate())
+            return figura$addNameplateSubmits(instance, original, submit, submit.pose(), submit.color(), submit.backgroundColor(), submit.lightCoords());
+
         return original.call(instance, e);
     }
 
@@ -176,6 +180,9 @@ public class NameTagFeatureRenderer$StorageMixin implements NameTagFeatureRender
             return figura$addNameplateSubmits(instance, original, submit, shadowMatrix, color, submit.backgroundColor(), light);
         }
 
+        if (figura$shouldSplitSubmittedNameplate())
+            return figura$addNameplateSubmits(instance, original, submit, shadowMatrix, color, submit.backgroundColor(), submit.lightCoords());
+
         return original.call(instance, new SubmitNodeStorage.NameTagSubmit(shadowMatrix, submit.x(), submit.y(), submit.text(),  submit.lightCoords(), color, submit.backgroundColor(), submit.distanceToCameraSq()));
     }
 
@@ -186,8 +193,12 @@ public class NameTagFeatureRenderer$StorageMixin implements NameTagFeatureRender
     private <E> boolean drawDiscreteWithOutline(List<E> instance, E e, Operation<Boolean> original, @Share("textMatrix") LocalRef<Matrix4f> textMatrix) {
         SubmitNodeStorage.NameTagSubmit submit = (SubmitNodeStorage.NameTagSubmit) e;
 
-        if (!figura$shouldCustomizeNameplate())
+        if (!figura$shouldCustomizeNameplate()) {
+            if (figura$shouldSplitSubmittedNameplate())
+                return figura$addNameplateSubmits(instance, original, submit, submit.pose(), submit.color(), submit.backgroundColor(), submit.lightCoords());
+
             return original.call(instance, e);
+        }
 
         Matrix4f pose = submit.pose();
         Matrix4f shadowMatrix = textMatrix.get() != null ? textMatrix.get() : pose;
@@ -209,8 +220,18 @@ public class NameTagFeatureRenderer$StorageMixin implements NameTagFeatureRender
     }
 
     @Unique
+    private boolean figura$shouldSplitSubmittedNameplate() {
+        return figura$isRenderingName && figura$textList != null && figura$textList.size() > 1;
+    }
+
+    @Unique
     private int figura$transparentColor(int color) {
         return color & 0x00FFFFFF;
+    }
+
+    @Unique
+    private Component figura$cleanSubmittedLine(Component text) {
+        return TextUtils.collapseLineSeparators(text);
     }
 
     @Unique
@@ -220,14 +241,13 @@ public class NameTagFeatureRenderer$StorageMixin implements NameTagFeatureRender
         if (figura$isRenderingName && figura$textList != null) {
             Font font = Minecraft.getInstance().font;
             for (int i = 0; i < figura$textList.size(); i++) {
-                Component text = figura$textList.get(i);
+                Component text = figura$cleanSubmittedLine(figura$textList.get(i));
 
                 if (text.getString().isEmpty())
                     continue;
 
-                int line = i - figura$textList.size() + 1;
                 float x = -font.width(text) / 2f;
-                float y = submit.y() + (font.lineHeight + 1) * line;
+                float y = submit.y() + (font.lineHeight + 1) * i;
 
                 original.call(instance, (E) new SubmitNodeStorage.NameTagSubmit(pose, x, y, text, light, color, backgroundColor, submit.distanceToCameraSq()));
             }
@@ -244,14 +264,13 @@ public class NameTagFeatureRenderer$StorageMixin implements NameTagFeatureRender
         if (figura$isRenderingName && figura$textList != null) {
             Font font = Minecraft.getInstance().font;
             for (int i = 0; i < figura$textList.size(); i++) {
-                Component text = figura$textList.get(i);
+                Component text = figura$cleanSubmittedLine(figura$textList.get(i));
 
                 if (text.getString().isEmpty())
                     continue;
 
-                int line = i - figura$textList.size() + 1;
                 float x = -font.width(text) / 2f;
-                float y = submit.y() + (font.lineHeight + 1) * line;
+                float y = submit.y() + (font.lineHeight + 1) * i;
 
                 figura$outlineSubmits.add(new SubmitNodeStorage.NameTagSubmit(pose, x, y, text, light, color, outlineColor, submit.distanceToCameraSq()));
             }

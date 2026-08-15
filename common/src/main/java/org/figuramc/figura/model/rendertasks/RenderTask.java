@@ -41,9 +41,12 @@ public abstract class RenderTask {
     public void render(PartCustomization.PartCustomizationStack stack, MultiBufferSource buffer, int light, int overlay) {
         customization.recalculate();
         stack.push(customization);
-        PoseStack poseStack = stack.peek().copyIntoGlobalPoseStack();
-        render(poseStack, buffer, light, overlay);
-        stack.pop();
+        try {
+            PoseStack poseStack = stack.peek().copyIntoGlobalPoseStack();
+            render(poseStack, buffer, light, overlay);
+        } finally {
+            stack.pop();
+        }
     }
     public abstract void render(PoseStack stack, MultiBufferSource buffer, int light, int overlay);
     public abstract int getComplexity();

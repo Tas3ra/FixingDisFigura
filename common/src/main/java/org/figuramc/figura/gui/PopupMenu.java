@@ -16,6 +16,8 @@ import net.minecraft.network.chat.FontDescription;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.item.component.ResolvableProfile;
+import net.minecraft.world.level.block.entity.SkullBlockEntity;
 import net.minecraft.world.phys.Vec3;
 import org.figuramc.figura.FiguraMod;
 import org.figuramc.figura.avatar.Avatar;
@@ -26,6 +28,7 @@ import org.figuramc.figura.math.vector.FiguraVec3;
 import org.figuramc.figura.math.vector.FiguraVec4;
 import org.figuramc.figura.permissions.PermissionManager;
 import org.figuramc.figura.permissions.PermissionPack;
+import org.figuramc.figura.permissions.Permissions;
 import org.figuramc.figura.utils.FiguraIdentifier;
 import org.figuramc.figura.utils.FiguraText;
 import org.figuramc.figura.utils.MathUtils;
@@ -69,6 +72,15 @@ public class PopupMenu {
                 PermissionPack pack = PermissionManager.get(id);
                 if (PermissionManager.decreaseCategory(pack))
                     FiguraToast.sendToast(FiguraText.of("toast.permission_change"), pack.getCategoryName());
+            }),
+            Pair.of(FiguraText.of("popup_menu.change_volume"), id -> {
+                PermissionPack pack = PermissionManager.get(id);
+                int volume = pack.get(Permissions.VOLUME);
+                volume = volume > 50 ? 50 : volume > 0 ? 0 : 100;
+
+                pack.insert(Permissions.VOLUME, volume, FiguraMod.MOD_ID);
+                PermissionManager.saveToDisk();
+                FiguraToast.sendToast(FiguraText.of("toast.volume_change"), Component.literal(volume + "%"));
             })
     );
     private static final int LENGTH = BUTTONS.size();
@@ -80,6 +92,8 @@ public class PopupMenu {
     private static UUID id;
     private static Component targetName;
     private static Vec3 targetPos;
+    private static SkullBlockEntity skullTarget;
+    private static boolean profileTarget;
 
     public static void render(GuiGraphics gui) {
         if (!isEnabled()) return;
@@ -104,6 +118,21 @@ public class PopupMenu {
                 clearTarget();
                 return;
             }
+        } else if (skullTarget != null) {
+            if (minecraft.level == null || skullTarget.isRemoved() || minecraft.level.getBlockEntity(skullTarget.getBlockPos()) != skullTarget) {
+                clearTarget();
+                return;
+            }
+
+            ResolvableProfile profile = skullTarget.getOwnerProfile();
+            renderId = AvatarManager.getIdForProfile(profile);
+            if (renderId == null || AvatarManager.getAvatarForPlayer(renderId) == null) {
+                clearTarget();
+                return;
+            }
+
+            renderName = resolveProfileName(profile, renderId);
+            renderPos = Vec3.atCenterOf(skullTarget.getBlockPos()).add(0d, 0.75d, 0d);
         }
 
         if (renderId == null || renderName == null || renderPos == null) {
@@ -119,7 +148,10 @@ public class PopupMenu {
 
         // world to screen space
         FiguraVec4 vec = MathUtils.worldToScreenSpace(FiguraVec3.fromVec3(renderPos));
-        if (vec.z < 1) return; // too close
+        if (vec.z < 1) { // too close
+            pose.popMatrix();
+            return;
+        }
 
         Window window = minecraft.getWindow();
         double w = window.getGuiScaledWidth();
@@ -214,7 +246,7 @@ public class PopupMenu {
     }
 
     public static boolean hasEntity() {
-        return entity != null || (id != null && targetName != null && targetPos != null);
+        return entity != null || skullTarget != null || (id != null && targetName != null && targetPos != null);
     }
 
     public static void setEntity(Entity entity) {
@@ -222,6 +254,8 @@ public class PopupMenu {
         PopupMenu.id = entity == null ? null : entity.getUUID();
         PopupMenu.targetName = null;
         PopupMenu.targetPos = null;
+        PopupMenu.skullTarget = null;
+        PopupMenu.profileTarget = false;
     }
 
     public static void setProfileTarget(UUID id, Component name, Vec3 pos) {
@@ -229,10 +263,34 @@ public class PopupMenu {
         PopupMenu.id = id;
         PopupMenu.targetName = name;
         PopupMenu.targetPos = pos;
+        PopupMenu.skullTarget = null;
+        PopupMenu.profileTarget = true;
+    }
+
+    public static boolean setSkullTarget(SkullBlockEntity skullTarget) {
+        if (skullTarget == null)
+            return false;
+
+        ResolvableProfile profile = skullTarget.getOwnerProfile();
+        UUID id = AvatarManager.getIdForProfile(profile);
+        if (id == null)
+            return false;
+
+        PopupMenu.entity = null;
+        PopupMenu.id = id;
+        PopupMenu.targetName = resolveProfileName(profile, id);
+        PopupMenu.targetPos = Vec3.atCenterOf(skullTarget.getBlockPos()).add(0d, 0.75d, 0d);
+        PopupMenu.skullTarget = skullTarget;
+        PopupMenu.profileTarget = true;
+        return true;
     }
 
     public static UUID getEntityId() {
         return id;
+    }
+
+    public static boolean isProfileTarget() {
+        return profileTarget;
     }
 
     private static void clearTarget() {
@@ -240,5 +298,17 @@ public class PopupMenu {
         id = null;
         targetName = null;
         targetPos = null;
+        skullTarget = null;
+        profileTarget = false;
+    }
+
+    private static Component resolveProfileName(ResolvableProfile profile, UUID id) {
+        String name = null;
+        if (profile != null && profile.partialProfile() != null)
+            name = profile.partialProfile().name();
+        if ((name == null || name.isBlank()) && profile != null && profile.name().isPresent())
+            name = profile.name().get();
+
+        return Component.literal(name == null || name.isBlank() ? id.toString() : name);
     }
 }
