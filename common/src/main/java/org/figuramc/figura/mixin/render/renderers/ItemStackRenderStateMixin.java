@@ -102,6 +102,7 @@ public class ItemStackRenderStateMixin implements FiguraItemStackRenderStateExte
             contextCallbacks.figura$addPreRenderingCallback(callback);
         for (var callback : new ArrayList<>(figura$postRenderingCallback))
             contextCallbacks.figura$addPostRenderingCallback(callback);
+        contextCallbacks.figura$setConsumeCallbacksOnSubmit(false);
         figura$preRenderingCallback.clear();
         figura$postRenderingCallback.clear();
     }
@@ -111,6 +112,7 @@ public class ItemStackRenderStateMixin implements FiguraItemStackRenderStateExte
         FiguraSubmitCallBackExtension contextCallbacks = (FiguraSubmitCallBackExtension)(Object)displayContext;
         contextCallbacks.figura$getPreRenderingCallbacks().clear();
         contextCallbacks.figura$getPostRenderingCallbacks().clear();
+        contextCallbacks.figura$setConsumeCallbacksOnSubmit(true);
     }
 
     @Inject(method = "clear", at = @At("HEAD"))

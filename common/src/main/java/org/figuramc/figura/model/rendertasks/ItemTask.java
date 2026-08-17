@@ -41,6 +41,9 @@ public class ItemTask extends RenderTask {
 
     @Override
     public void render(PoseStack poseStack, MultiBufferSource buffer, int light, int overlay) {
+        if (item == null || item.isEmpty())
+            return;
+
         poseStack.scale(-16, 16, -16);
 
         LivingEntity entity = owner.renderer.entity instanceof LivingEntity living ? living : null;
@@ -83,7 +86,19 @@ public class ItemTask extends RenderTask {
             value = "item_task.set_item"
     )
     public ItemTask setItem(Object item) {
+        if (item == null) {
+            this.item = ItemStack.EMPTY;
+            this.cachedComplexity = 0;
+            return this;
+        }
+
         this.item = LuaUtils.parseItemStack("item", item);
+        if (this.item == null || this.item.isEmpty()) {
+            this.item = ItemStack.EMPTY;
+            this.cachedComplexity = 0;
+            return this;
+        }
+
         Minecraft client = Minecraft.getInstance();
         RandomSource random = client.level != null ? client.level.random : RandomSource.create();
         cachedComplexity = ((FiguraItemRendererExtension)client.getItemRenderer()).figura$getModelComplexity(this.item, random);

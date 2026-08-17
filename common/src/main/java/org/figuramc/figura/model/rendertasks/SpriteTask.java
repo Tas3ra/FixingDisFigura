@@ -2,7 +2,10 @@ package org.figuramc.figura.model.rendertasks;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.texture.MissingTextureAtlasSprite;
 import net.minecraft.resources.Identifier;
 import org.figuramc.figura.avatar.Avatar;
@@ -57,20 +60,27 @@ public class SpriteTask extends RenderTask {
         Matrix4f pose = poseStack.last().pose();
         Matrix3f normal = poseStack.last().normal();
 
-        int newLight = this.customization.light != null ? this.customization.light : light;
+        int newLight = renderType.isFullBright() ? LightTexture.FULL_BRIGHT : this.customization.light != null ? this.customization.light : light;
         int newOverlay = this.customization.overlay != null ? this.customization.overlay : overlay;
 
         // setup texture render
-        VertexConsumer consumer = buffer.getBuffer(renderType.get(texture));
+        RenderType layer = renderType.get(texture);
+        if (layer == null)
+            return;
+
+        VertexConsumer consumer = buffer.getBuffer(layer);
+        float lineWidth = renderType.needsLineWidth() ? figura$getLineWidth() : 0f;
 
         // create vertices
         for (Vertex v : vertices) {
-            consumer.addVertex(pose, v.x, v.y, v.z)
+            VertexConsumer vertex = consumer.addVertex(pose, v.x, v.y, v.z)
                     .setColor(r, g, b, a)
                     .setUv(v.u, v.v)
                     .setOverlay(newOverlay)
                     .setLight(newLight)
                     .setNormal(poseStack.last(), v.nx, v.ny, v.nz);
+            if (lineWidth > 0f)
+                vertex.setLineWidth(lineWidth);
         }
     }
 
@@ -93,6 +103,11 @@ public class SpriteTask extends RenderTask {
         vertices.add(new Vertex(width, height, 0f, u2, v2, 0f, 0f, -1f));
         vertices.add(new Vertex(width, 0f, 0f, u2, v, 0f, 0f, -1f));
         vertices.add(new Vertex(0f, 0f, 0f, u, v, 0f, 0f, -1f));
+    }
+
+    private static float figura$getLineWidth() {
+        float lineWidth = Minecraft.getInstance().getWindow().getAppropriateLineWidth();
+        return Float.isFinite(lineWidth) && lineWidth > 0f ? lineWidth : 1f;
     }
 
 

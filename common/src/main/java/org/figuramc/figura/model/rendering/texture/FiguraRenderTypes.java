@@ -76,6 +76,10 @@ public enum FiguraRenderTypes {
         return this == EMISSIVE || this == EMISSIVE_SOLID || this == EYES || this == CUTOUT_EMISSIVE_SOLID;
     }
 
+    public boolean needsLineWidth() {
+        return this == LINES || this == LINES_STRIP;
+    }
+
     public RenderType get(Identifier id) {
         if (!texture)
             return func.apply(id);

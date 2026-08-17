@@ -1,7 +1,6 @@
 package org.figuramc.figura.model.rendering;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.datafixers.util.Pair;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -26,13 +25,16 @@ import org.joml.Matrix4d;
 import org.joml.Quaternionf;
 
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.EnumMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * Mainly exists as an abstract superclass for VAO-based and
@@ -45,7 +47,8 @@ public abstract class FiguraRenderer {
 
     protected final Map<ParentType, List<FiguraModelPart>> separatedParts = new ConcurrentHashMap<>();
 
-    protected boolean isRendering, dirty;
+    private final ReentrantReadWriteLock lifecycleLock = new ReentrantReadWriteLock();
+    protected volatile boolean isRendering, dirty;
 
     // -- rendering data -- // 
 
@@ -64,10 +67,10 @@ public abstract class FiguraRenderer {
     public VanillaModelData vanillaModelData = new VanillaModelData();
 
     public PartFilterScheme currentFilterScheme;
-    public final HashMap<ParentType, ConcurrentLinkedQueue<Pair<FiguraMat4, FiguraMat3>>> pivotCustomizations = new HashMap<>(ParentType.values().length);
+    public final Map<ParentType, ConcurrentLinkedQueue<PivotCustomization>> pivotCustomizations = new EnumMap<>(ParentType.class);
     protected final List<FiguraTextureSet> textureSets = new ArrayList<>();
-    public final HashMap<String, FiguraTexture> textures = new HashMap<>();
-    public final HashMap<String, FiguraTexture> customTextures = new HashMap<>();
+    public final ConcurrentMap<String, FiguraTexture> textures = new ConcurrentHashMap<>();
+    public final ConcurrentMap<String, FiguraTexture> customTextures = new ConcurrentHashMap<>();
     protected static int shouldRenderPivots;
     public boolean allowMatrixUpdate = false;
     public boolean allowHiddenTransforms = true;
@@ -81,6 +84,11 @@ public abstract class FiguraRenderer {
 
     public FiguraRenderer(Avatar avatar) {
         this.avatar = avatar;
+
+        for (ParentType parentType : ParentType.values()) {
+            if (parentType.isPivot)
+                pivotCustomizations.put(parentType, new ConcurrentLinkedQueue<>());
+        }
 
         // textures
 
@@ -144,21 +152,39 @@ public abstract class FiguraRenderer {
     public abstract int renderSpecialParts();
     public abstract void updateMatrices();
 
-    public synchronized boolean hasRoot() {
-        return root != null;
+    public ConcurrentLinkedQueue<PivotCustomization> getPivotCustomizationQueue(ParentType parentType) {
+        return parentType == null ? null : pivotCustomizations.get(parentType);
     }
 
-    public synchronized double getVisibleModelTopY(Entity entity, float tickDelta) {
-        if (root == null || entity == null)
-            return Double.NaN;
+    public void clearPivotCustomizations() {
+        pivotCustomizations.values().forEach(Queue::clear);
+    }
 
-        double[] top = {Double.NEGATIVE_INFINITY};
-        collectVisibleModelTopY(root, true, top);
+    public boolean hasRoot() {
+        lifecycleLock.readLock().lock();
+        try {
+            return root != null;
+        } finally {
+            lifecycleLock.readLock().unlock();
+        }
+    }
 
-        if (!Double.isFinite(top[0]))
-            return Double.NaN;
+    public double getVisibleModelTopY(Entity entity, float tickDelta) {
+        lifecycleLock.readLock().lock();
+        try {
+            if (root == null || entity == null)
+                return Double.NaN;
 
-        return top[0] - entity.getPosition(tickDelta).y;
+            double[] top = {Double.NEGATIVE_INFINITY};
+            collectVisibleModelTopY(root, true, top);
+
+            if (!Double.isFinite(top[0]))
+                return Double.NaN;
+
+            return top[0] - entity.getPosition(tickDelta).y;
+        } finally {
+            lifecycleLock.readLock().unlock();
+        }
     }
 
     private void collectVisibleModelTopY(FiguraModelPart part, boolean previousSucceeded, double[] top) {
@@ -180,7 +206,16 @@ public abstract class FiguraRenderer {
             collectVisibleModelTopY(child, thisPassedPredicate, top);
     }
 
-    protected synchronized void clean() {
+    protected void clean() {
+        lifecycleLock.writeLock().lock();
+        try {
+            cleanUnlocked();
+        } finally {
+            lifecycleLock.writeLock().unlock();
+        }
+    }
+
+    private void cleanUnlocked() {
         Set<FiguraTexture> texturesToCloseFromRenderThread = new LinkedHashSet<>(textures.values());
         for (FiguraTextureSet set : textureSets) {
             for (FiguraTexture texture : set.textures) {
@@ -195,7 +230,7 @@ public abstract class FiguraRenderer {
         textures.clear();
         customTextures.clear();
         separatedParts.clear();
-        pivotCustomizations.clear();
+        clearPivotCustomizations();
         root = null;
         entity = null;
         bufferSource = null;
@@ -205,13 +240,18 @@ public abstract class FiguraRenderer {
         for (FiguraTexture texture : texturesToCloseFromRenderThread)
             texture.closeFromRenderThread();
         for (FiguraTexture texture : customTexturesToClose)
-            texture.close();
+            texture.closeFromRenderThread();
     }
 
-    public synchronized void invalidate() {
-        this.dirty = true;
-        if (!this.isRendering)
-            clean();
+    public void invalidate() {
+        lifecycleLock.writeLock().lock();
+        try {
+            this.dirty = true;
+            if (!this.isRendering)
+                cleanUnlocked();
+        } finally {
+            lifecycleLock.writeLock().unlock();
+        }
     }
 
     public void sortParts() {
@@ -232,6 +272,30 @@ public abstract class FiguraRenderer {
 
         for (FiguraModelPart child : part.children)
             _sortParts(child, activeSeparateParent);
+    }
+
+    public static class PivotCustomization {
+        private final FiguraMat4 positionMatrix;
+        private final FiguraMat3 normalMatrix;
+        private final int modelDepth;
+
+        public PivotCustomization(FiguraMat4 positionMatrix, FiguraMat3 normalMatrix, int modelDepth) {
+            this.positionMatrix = positionMatrix;
+            this.normalMatrix = normalMatrix;
+            this.modelDepth = modelDepth;
+        }
+
+        public FiguraMat4 positionMatrix() {
+            return positionMatrix;
+        }
+
+        public FiguraMat3 normalMatrix() {
+            return normalMatrix;
+        }
+
+        public int modelDepth() {
+            return modelDepth;
+        }
     }
 
     /**

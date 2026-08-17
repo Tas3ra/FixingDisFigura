@@ -26,6 +26,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class PlayerHeadSpecialRendererMixin {
     @ModifyReturnValue(method = "extractArgument(Lnet/minecraft/world/item/ItemStack;)Lnet/minecraft/client/renderer/PlayerSkinRenderCache$RenderInfo;", at = @At("TAIL"))
     public PlayerSkinRenderCache.RenderInfo setAvatar(PlayerSkinRenderCache.RenderInfo original, @Local(argsOnly = true) ItemStack itemStack) {
+        if (AvatarManager.panic) {
+            SkullBlockRendererHelper.clear();
+            SkullBlockRendererAccessor.clear();
+            return original;
+        }
+
         if (original == null) {
             SkullBlockRendererHelper.clear();
             SkullBlockRendererAccessor.clear();
@@ -44,6 +50,12 @@ public abstract class PlayerHeadSpecialRendererMixin {
 
     @Inject(method = "submit(Lnet/minecraft/client/renderer/PlayerSkinRenderCache$RenderInfo;Lnet/minecraft/world/item/ItemDisplayContext;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;IIZI)V", at = @At("HEAD"))
     private void captureAvatar(PlayerSkinRenderCache.RenderInfo playerHeadRenderInfo, ItemDisplayContext itemDisplayContext, PoseStack poseStack, SubmitNodeCollector submitNodeCollector, int i, int j, boolean bl, int k, CallbackInfo ci) {
+        if (AvatarManager.panic) {
+            SkullBlockRendererHelper.clear();
+            SkullBlockRendererAccessor.clear();
+            return;
+        }
+
         ItemStack contextStack = SkullBlockRendererAccessor.getItem();
         Entity contextEntity = SkullBlockRendererAccessor.getEntity();
         SkullBlockRendererAccessor.SkullRenderMode contextMode = SkullBlockRendererAccessor.getRenderMode();

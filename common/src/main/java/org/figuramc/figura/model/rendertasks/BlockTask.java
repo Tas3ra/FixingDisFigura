@@ -32,6 +32,9 @@ public class BlockTask extends RenderTask {
 
     @Override
     public void render(PoseStack poseStack, MultiBufferSource buffer, int light, int overlay) {
+        if (block == null || block.isAir())
+            return;
+
         poseStack.scale(16, 16, 16);
 
         int newLight = this.customization.light != null ? this.customization.light : light;
@@ -69,7 +72,18 @@ public class BlockTask extends RenderTask {
             value = "block_task.set_block"
     )
     public BlockTask setBlock(Object block) {
+        if (block == null) {
+            this.block = null;
+            this.cachedComplexity = 0;
+            return this;
+        }
+
         this.block = LuaUtils.parseBlockState("block", block);
+        if (this.block == null || this.block.isAir()) {
+            this.cachedComplexity = 0;
+            return this;
+        }
+
         Minecraft client = Minecraft.getInstance();
         RandomSource random = client.level != null ? client.level.random : RandomSource.create();
 

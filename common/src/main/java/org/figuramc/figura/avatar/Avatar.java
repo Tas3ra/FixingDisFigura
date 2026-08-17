@@ -62,6 +62,7 @@ import org.figuramc.figura.model.FiguraModelPart;
 import org.figuramc.figura.model.ParentType;
 import org.figuramc.figura.model.PartCustomization;
 import org.figuramc.figura.model.rendering.FiguraRenderer;
+import org.figuramc.figura.model.rendering.FiguraRenderer.PivotCustomization;
 import org.figuramc.figura.model.rendering.EntityRenderMode;
 import org.figuramc.figura.model.rendering.ImmediateFiguraRenderer;
 import org.figuramc.figura.model.rendering.PartFilterScheme;
@@ -90,6 +91,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 
 // the avatar class
@@ -106,6 +109,7 @@ public class Avatar {
     public CompoundTag nbt;
     public boolean loaded = true;
     public final boolean isHost;
+    private final ReentrantLock renderStateLock = new ReentrantLock();
 
     //metadata
     public String name, entityName;
@@ -506,9 +510,12 @@ public class Avatar {
             target = (FiguraSubmitCallBackExtension)(Object)displayContext;
         }
 
+        AtomicBoolean renderedCustomItem = new AtomicBoolean(false);
         target.figura$addPreRenderingCallback((bufferSource, poseStack) -> {
-            for (FiguraModelPart part : parts)
-                renderItem(stack, bufferSource, part, light, overlay);
+            if (renderedCustomItem.compareAndSet(false, true)) {
+                for (FiguraModelPart part : parts)
+                    renderItem(stack, bufferSource, part, light, overlay);
+            }
             return false;
         });
         return true;
@@ -615,34 +622,39 @@ public class Avatar {
         render();
     }
 
-    public synchronized void worldRender(Entity entity, double camX, double camY, double camZ, PoseStack stack, MultiBufferSource bufferSource, int lightFallback, float tickDelta, EntityRenderMode mode) {
-        if (renderer == null || !loaded)
-            return;
-
-        EntityRenderMode prevRenderMode = renderMode;
-        boolean prevAllowMatrixUpdate = renderer.allowMatrixUpdate;
-        boolean prevUpdateLight = renderer.updateLight;
-        renderMode = mode;
-        boolean update = prevRenderMode != EntityRenderMode.OTHER || renderMode == EntityRenderMode.FIRST_PERSON_WORLD;
-
+    public void worldRender(Entity entity, double camX, double camY, double camZ, PoseStack stack, MultiBufferSource bufferSource, int lightFallback, float tickDelta, EntityRenderMode mode) {
+        renderStateLock.lock();
         try {
-            renderer.pivotCustomizations.values().clear();
-            renderer.allowMatrixUpdate = update;
-            renderer.updateLight = update;
-            renderer.entity = entity;
+            if (renderer == null || !loaded)
+                return;
 
-            renderer.setupRenderer(
-                    PartFilterScheme.WORLD, bufferSource, stack,
-                    tickDelta, lightFallback, 1f, OverlayTexture.NO_OVERLAY,
-                    false, false,
-                    camX, camY, camZ
-            );
+            EntityRenderMode prevRenderMode = renderMode;
+            boolean prevAllowMatrixUpdate = renderer.allowMatrixUpdate;
+            boolean prevUpdateLight = renderer.updateLight;
+            renderMode = mode;
+            boolean update = prevRenderMode != EntityRenderMode.OTHER || renderMode == EntityRenderMode.FIRST_PERSON_WORLD;
 
-            complexity.use(renderer.renderSpecialParts());
+            try {
+                renderer.clearPivotCustomizations();
+                renderer.allowMatrixUpdate = update;
+                renderer.updateLight = update;
+                renderer.entity = entity;
+
+                renderer.setupRenderer(
+                        PartFilterScheme.WORLD, bufferSource, stack,
+                        tickDelta, lightFallback, 1f, OverlayTexture.NO_OVERLAY,
+                        false, false,
+                        camX, camY, camZ
+                );
+
+                complexity.use(renderer.renderSpecialParts());
+            } finally {
+                renderMode = prevRenderMode;
+                renderer.allowMatrixUpdate = prevAllowMatrixUpdate;
+                renderer.updateLight = prevUpdateLight;
+            }
         } finally {
-            renderMode = prevRenderMode;
-            renderer.allowMatrixUpdate = prevAllowMatrixUpdate;
-            renderer.updateLight = prevUpdateLight;
+            renderStateLock.unlock();
         }
     }
 
@@ -727,21 +739,28 @@ public class Avatar {
 
         PartFilterScheme filter = lefty ? PartFilterScheme.LEFT_ARM : PartFilterScheme.RIGHT_ARM;
         boolean config = Configs.ALLOW_FP_HANDS.value;
-        renderer.allowHiddenTransforms = config;
-        renderer.allowMatrixUpdate = false;
-        renderer.ignoreVanillaVisibility = true;
+        boolean previousAllowHiddenTransforms = renderer.allowHiddenTransforms;
+        boolean previousAllowMatrixUpdate = renderer.allowMatrixUpdate;
+        boolean previousIgnoreVanillaVisibility = renderer.ignoreVanillaVisibility;
 
         stack.pushPose();
-        if (!config) {
-            stack.mulPose(Axis.ZP.rotation(arm.zRot));
-            stack.mulPose(Axis.YP.rotation(arm.yRot));
-            stack.mulPose(Axis.XP.rotation(arm.xRot));
-        }
-        render(player, 0f, tickDelta, 1f, stack, bufferSource, light, OverlayTexture.NO_OVERLAY, playerModel, filter, false, false);
-        stack.popPose();
+        try {
+            renderer.allowHiddenTransforms = config;
+            renderer.allowMatrixUpdate = false;
+            renderer.ignoreVanillaVisibility = true;
 
-        renderer.allowHiddenTransforms = true;
-        renderer.ignoreVanillaVisibility = false;
+            if (!config) {
+                stack.mulPose(Axis.ZP.rotation(arm.zRot));
+                stack.mulPose(Axis.YP.rotation(arm.yRot));
+                stack.mulPose(Axis.XP.rotation(arm.xRot));
+            }
+            render(player, 0f, tickDelta, 1f, stack, bufferSource, light, OverlayTexture.NO_OVERLAY, playerModel, filter, false, false);
+        } finally {
+            stack.popPose();
+            renderer.allowHiddenTransforms = previousAllowHiddenTransforms;
+            renderer.allowMatrixUpdate = previousAllowMatrixUpdate;
+            renderer.ignoreVanillaVisibility = previousIgnoreVanillaVisibility;
+        }
 
         FiguraMod.popProfiler(4);
     }
@@ -754,26 +773,28 @@ public class Avatar {
         FiguraMod.pushProfiler("hudRender");
 
         stack.pushPose();
-        stack.last().pose().scale(16, 16, -16);
-        stack.last().normal().scale(1, 1, -1);
+        try {
+            stack.last().pose().scale(16, 16, -16);
+            stack.last().normal().scale(1, 1, -1);
 
-        Minecraft.getInstance().gameRenderer.getLighting().setupFor(Lighting.Entry.ITEMS_FLAT);
-        GlStateManager._disableDepthTest();
+            Minecraft.getInstance().gameRenderer.getLighting().setupFor(Lighting.Entry.ITEMS_FLAT);
+            GlStateManager._disableDepthTest();
 
-        renderer.entity = entity;
+            renderer.entity = entity;
 
-        renderer.setupRenderer(
-                PartFilterScheme.HUD, bufferSource, stack,
-                tickDelta, LightTexture.FULL_BRIGHT, 1f, OverlayTexture.NO_OVERLAY,
-                false, false
-        );
+            renderer.setupRenderer(
+                    PartFilterScheme.HUD, bufferSource, stack,
+                    tickDelta, LightTexture.FULL_BRIGHT, 1f, OverlayTexture.NO_OVERLAY,
+                    false, false
+            );
 
-        if (renderer.renderSpecialParts() > 0)
-            ((MultiBufferSource.BufferSource) renderer.bufferSource).endBatch();
-
-        GlStateManager._enableDepthTest();
-        Minecraft.getInstance().gameRenderer.getLighting().setupFor(Lighting.Entry.ITEMS_3D);
-        stack.popPose();
+            if (renderer.renderSpecialParts() > 0)
+                ((MultiBufferSource.BufferSource) renderer.bufferSource).endBatch();
+        } finally {
+            GlStateManager._enableDepthTest();
+            Minecraft.getInstance().gameRenderer.getLighting().setupFor(Lighting.Entry.ITEMS_3D);
+            stack.popPose();
+        }
 
         FiguraMod.popProfiler(2);
     }
@@ -782,58 +803,63 @@ public class Avatar {
         return skullRender(stack, bufferSource, light, direction, yaw, true);
     }
 
-    public synchronized boolean skullRender(PoseStack stack, MultiBufferSource bufferSource, int light, Direction direction, float yaw, boolean applySkullPlacement) {
+    public boolean skullRender(PoseStack stack, MultiBufferSource bufferSource, int light, Direction direction, float yaw, boolean applySkullPlacement) {
         return skullRender(stack, bufferSource, light, direction, yaw, applySkullPlacement, false);
     }
 
-    public synchronized boolean skullRender(PoseStack stack, MultiBufferSource bufferSource, int light, Direction direction, float yaw, boolean applySkullPlacement, boolean guiItem) {
-        FiguraRenderer renderer = this.renderer;
-        if (renderer == null || !loaded || !renderer.interceptRendersIntoFigura)
-            return false;
-
-        stack.pushPose();
-        boolean allowPivotParts = renderer.allowPivotParts;
-        EntityRenderMode previousRenderMode = renderMode;
-        boolean previousAllowMatrixUpdate = renderer.allowMatrixUpdate;
-        boolean previousUpdateLight = renderer.updateLight;
-
+    public boolean skullRender(PoseStack stack, MultiBufferSource bufferSource, int light, Direction direction, float yaw, boolean applySkullPlacement, boolean guiItem) {
+        renderStateLock.lock();
         try {
-            if (guiItem) {
-                renderMode = EntityRenderMode.MINECRAFT_GUI;
-                renderer.allowMatrixUpdate = false;
-                renderer.updateLight = false;
+            FiguraRenderer renderer = this.renderer;
+            if (renderer == null || !loaded || !renderer.interceptRendersIntoFigura)
+                return false;
+
+            stack.pushPose();
+            boolean allowPivotParts = renderer.allowPivotParts;
+            EntityRenderMode previousRenderMode = renderMode;
+            boolean previousAllowMatrixUpdate = renderer.allowMatrixUpdate;
+            boolean previousUpdateLight = renderer.updateLight;
+
+            try {
+                if (guiItem) {
+                    renderMode = EntityRenderMode.MINECRAFT_GUI;
+                    renderer.allowMatrixUpdate = false;
+                    renderer.updateLight = false;
+                }
+
+                if (applySkullPlacement) {
+                    if (direction == null)
+                        stack.translate(0.5d, 0d, 0.5d);
+                    else
+                        stack.translate((0.5d - direction.getStepX() * 0.25d), 0.25d, (0.5d - direction.getStepZ() * 0.25d));
+
+                    stack.scale(-1f, -1f, 1f);
+                }
+
+                stack.mulPose(Axis.YP.rotationDegrees(yaw));
+
+                renderer.allowPivotParts = false;
+
+                renderer.setupRenderer(
+                        PartFilterScheme.SKULL, bufferSource, stack,
+                        1f, light, 1f, OverlayTexture.NO_OVERLAY,
+                        false, false
+                );
+
+                int comp = renderer.renderSpecialParts();
+                complexity.use(comp);
+
+                // head
+                return comp > 0 || headRender(stack, bufferSource, light, true);
+            } finally {
+                renderMode = previousRenderMode;
+                renderer.allowPivotParts = allowPivotParts;
+                renderer.allowMatrixUpdate = previousAllowMatrixUpdate;
+                renderer.updateLight = previousUpdateLight;
+                stack.popPose();
             }
-
-            if (applySkullPlacement) {
-                if (direction == null)
-                    stack.translate(0.5d, 0d, 0.5d);
-                else
-                    stack.translate((0.5d - direction.getStepX() * 0.25d), 0.25d, (0.5d - direction.getStepZ() * 0.25d));
-
-                stack.scale(-1f, -1f, 1f);
-            }
-
-            stack.mulPose(Axis.YP.rotationDegrees(yaw));
-
-            renderer.allowPivotParts = false;
-
-            renderer.setupRenderer(
-                    PartFilterScheme.SKULL, bufferSource, stack,
-                    1f, light, 1f, OverlayTexture.NO_OVERLAY,
-                    false, false
-            );
-
-            int comp = renderer.renderSpecialParts();
-            complexity.use(comp);
-
-            // head
-            return comp > 0 || headRender(stack, bufferSource, light, true);
         } finally {
-            renderMode = previousRenderMode;
-            renderer.allowPivotParts = allowPivotParts;
-            renderer.allowMatrixUpdate = previousAllowMatrixUpdate;
-            renderer.updateLight = previousUpdateLight;
-            stack.popPose();
+            renderStateLock.unlock();
         }
     }
 
@@ -842,29 +868,33 @@ public class Avatar {
             return false;
 
         boolean oldMat = renderer.allowMatrixUpdate;
+        boolean oldHiddenTransforms = renderer.allowHiddenTransforms;
+        boolean oldIgnoreVanillaVisibility = renderer.ignoreVanillaVisibility;
 
-        // pre render
-        renderer.setupRenderer(
-                PartFilterScheme.HEAD, bufferSource, stack,
-                1f, light, 1f, OverlayTexture.NO_OVERLAY,
-                false, false
-        );
+        try {
+            // pre render
+            renderer.setupRenderer(
+                    PartFilterScheme.HEAD, bufferSource, stack,
+                    1f, light, 1f, OverlayTexture.NO_OVERLAY,
+                    false, false
+            );
 
-        renderer.allowHiddenTransforms = false;
-        renderer.allowMatrixUpdate = false;
-        renderer.ignoreVanillaVisibility = true;
+            renderer.allowHiddenTransforms = false;
+            renderer.allowMatrixUpdate = false;
+            renderer.ignoreVanillaVisibility = true;
 
-        // render
-        int comp = renderer.render();
-        if (useComplexity)
-            complexity.use(comp);
+            // render
+            int comp = renderer.render();
+            if (useComplexity)
+                complexity.use(comp);
 
-        // pos render
-        renderer.allowMatrixUpdate = oldMat;
-        renderer.allowHiddenTransforms = true;
-        renderer.ignoreVanillaVisibility = false;
-
-        return comp > 0 && luaRuntime != null && !luaRuntime.vanilla_model.HEAD.checkVisible();
+            return comp > 0 && luaRuntime != null && !luaRuntime.vanilla_model.HEAD.checkVisible();
+        } finally {
+            // pos render
+            renderer.allowMatrixUpdate = oldMat;
+            renderer.allowHiddenTransforms = oldHiddenTransforms;
+            renderer.ignoreVanillaVisibility = oldIgnoreVanillaVisibility;
+        }
     }
 
     public boolean submitPortraitDraw(GuiGraphics gui, Identifier fallback, int x, int y, int size, float modelScale, boolean upsideDown) {
@@ -907,41 +937,46 @@ public class Avatar {
         return true;
     }
 
-    public synchronized boolean renderHeadForPortrait(MultiBufferSource.BufferSource buffer, PoseStack stack, int light, float modelScale, boolean upsideDown) {
-        FiguraRenderer renderer = this.renderer;
-        if (renderer == null || !loaded)
-            return false;
-
-        boolean allowPivotParts = renderer.allowPivotParts;
-        boolean paperdoll = UIHelper.paperdoll;
-        float dollScale = UIHelper.dollScale;
-
-        stack.pushPose();
+    public boolean renderHeadForPortrait(MultiBufferSource.BufferSource buffer, PoseStack stack, int light, float modelScale, boolean upsideDown) {
+        renderStateLock.lock();
         try {
-            stack.scale(2, 2, 2); // i have no clue why it's exactly 2x smaller than it should be
-            //stack.scale(modelScale, modelScale * (upsideDown ? 1 : -1), modelScale);
-            renderer.allowPivotParts = false;
+            FiguraRenderer renderer = this.renderer;
+            if (renderer == null || !loaded)
+                return false;
 
-            UIHelper.paperdoll = true;
-            UIHelper.dollScale = 16f;
+            boolean allowPivotParts = renderer.allowPivotParts;
+            boolean paperdoll = UIHelper.paperdoll;
+            float dollScale = UIHelper.dollScale;
 
-            renderer.setupRenderer(
-                    PartFilterScheme.PORTRAIT, buffer, stack,
-                    1f, light, 1f, OverlayTexture.NO_OVERLAY,
-                    false, false
-            );
+            stack.pushPose();
+            try {
+                stack.scale(2, 2, 2); // i have no clue why it's exactly 2x smaller than it should be
+                //stack.scale(modelScale, modelScale * (upsideDown ? 1 : -1), modelScale);
+                renderer.allowPivotParts = false;
 
-            // render
-            int comp = renderer.renderSpecialParts();
-            return comp > 0 || headRender(stack, buffer, light, false);
+                UIHelper.paperdoll = true;
+                UIHelper.dollScale = 16f;
+
+                renderer.setupRenderer(
+                        PartFilterScheme.PORTRAIT, buffer, stack,
+                        1f, light, 1f, OverlayTexture.NO_OVERLAY,
+                        false, false
+                );
+
+                // render
+                int comp = renderer.renderSpecialParts();
+                return comp > 0 || headRender(stack, buffer, light, false);
+            } finally {
+                // after render
+                stack.popPose();
+                buffer.endBatch();
+                UIHelper.paperdoll = paperdoll;
+                UIHelper.dollScale = dollScale;
+
+                renderer.allowPivotParts = allowPivotParts;
+            }
         } finally {
-            // after render
-            stack.popPose();
-            buffer.endBatch();
-            UIHelper.paperdoll = paperdoll;
-            UIHelper.dollScale = dollScale;
-
-            renderer.allowPivotParts = allowPivotParts;
+            renderStateLock.unlock();
         }
     }
 
@@ -1036,36 +1071,58 @@ public class Avatar {
         }
     }
 
-    public synchronized boolean hasPivotPart(ParentType parent) {
+    public boolean hasPivotPart(ParentType parent) {
         if (renderer == null || !loaded || !parent.isPivot)
             return false;
 
-        Queue<Pair<FiguraMat4, FiguraMat3>> queue = renderer.pivotCustomizations.get(parent);
+        Queue<PivotCustomization> queue = renderer.getPivotCustomizationQueue(parent);
         return queue != null && !queue.isEmpty();
     }
 
-    public synchronized boolean pivotPartRender(ParentType parent, Consumer<PoseStack> consumer) {
+    public boolean pivotPartRender(ParentType parent, Consumer<PoseStack> consumer) {
         if (renderer == null || !loaded || !parent.isPivot)
             return false;
 
-        Queue<Pair<FiguraMat4, FiguraMat3>> queue = renderer.pivotCustomizations.computeIfAbsent(parent, p -> new ConcurrentLinkedQueue<>());
+        Queue<PivotCustomization> queue = renderer.getPivotCustomizationQueue(parent);
 
-        if (queue.isEmpty())
+        if (queue == null || queue.isEmpty())
             return false;
 
+        List<PivotCustomization> matrices = new ArrayList<>();
         int i = 0;
-        while (!queue.isEmpty() && i++ < 1000) { // limit of 1000 pivot part renders, just in case something goes infinitely somehow
-            Pair<FiguraMat4, FiguraMat3> matrixPair = queue.poll();
-            PartCustomization customization = new PartCustomization();
-            customization.setPositionMatrix(matrixPair.getFirst());
-            customization.setNormalMatrix(matrixPair.getSecond());
-            customization.needsMatrixRecalculation = false;
-            PoseStack stack = customization.copyIntoGlobalPoseStack();
-            consumer.accept(stack);
-        }
+        PivotCustomization matrixPair;
+        while (i++ < 1000 && (matrixPair = queue.poll()) != null) // limit of 1000 pivot part renders, just in case something goes infinitely somehow
+            matrices.add(matrixPair);
 
         queue.clear();
+
+        // A vanilla layer can only render one item/armor/parrot/wing at a time.
+        // Draining every queued matrix prevents duplicate accidental pivot parts from
+        // leaking into later layers. The deepest visible Figura pivot is the most
+        // specific model pivot, so it wins over shallow/default Minecraft-body pivots.
+        PivotCustomization queuedMatrixPair = matrices.get(0);
+        for (PivotCustomization matrix : matrices) {
+            if (matrix.modelDepth() >= queuedMatrixPair.modelDepth())
+                queuedMatrixPair = matrix;
+        }
+
+        PartCustomization customization = new PartCustomization();
+        customization.setPositionMatrix(queuedMatrixPair.positionMatrix());
+        customization.setNormalMatrix(queuedMatrixPair.normalMatrix());
+        customization.needsMatrixRecalculation = false;
+        PoseStack stack = customization.copyIntoGlobalPoseStack();
+        consumer.accept(stack);
+
         return true;
+    }
+
+    public void clearPivotPart(ParentType parent) {
+        if (renderer == null || parent == null || !parent.isPivot)
+            return;
+
+        Queue<PivotCustomization> queue = renderer.getPivotCustomizationQueue(parent);
+        if (queue != null)
+            queue.clear();
     }
 
     public void updateMatrices(EntityModel<?> entityModel, PoseStack stack) {
@@ -1123,26 +1180,31 @@ public class Avatar {
      * closes the native texture resources.
      * also closes and stops this avatar sounds
      */
-    public synchronized void clean() {
-        if (renderer != null) {
-            renderer.invalidate();
-            renderer = null;
+    public void clean() {
+        renderStateLock.lock();
+        try {
+            if (renderer != null) {
+                renderer.invalidate();
+                renderer = null;
+            }
+
+            clearSounds();
+            clearParticles();
+            closeBuffers();
+            closeStreams();
+
+            events.clear();
+            animations.clear();
+            resources.clear();
+            badgeToColor.clear();
+            noPermissions.clear();
+            permissionsToTick.clear();
+            customInstructions.clear();
+            nbt = null;
+            luaRuntime = null;
+        } finally {
+            renderStateLock.unlock();
         }
-
-        clearSounds();
-        clearParticles();
-        closeBuffers();
-        closeStreams();
-
-        events.clear();
-        animations.clear();
-        resources.clear();
-        badgeToColor.clear();
-        noPermissions.clear();
-        permissionsToTick.clear();
-        customInstructions.clear();
-        nbt = null;
-        luaRuntime = null;
     }
 
     public void clearSounds() {
@@ -1332,20 +1394,16 @@ public class Avatar {
             throw new LuaError("Texture exceeded max size of " + max + " x " + max + " resolution, got " + image.getWidth() + " x " + image.getHeight());
         }
 
-        synchronized (renderer) {
-            FiguraTexture oldText = renderer.customTextures.get(name);
-            if (oldText != null)
-                oldText.close();
-
-            if (renderer.customTextures.size() > TextureAPI.TEXTURE_LIMIT) {
-                image.close();
-                throw new LuaError("Maximum amount of textures reached!");
-            }
-
-            FiguraTexture texture = new FiguraTexture(this, name, image);
-            renderer.customTextures.put(name, texture);
-            return texture;
+        if (renderer.customTextures.size() > TextureAPI.TEXTURE_LIMIT) {
+            image.close();
+            throw new LuaError("Maximum amount of textures reached!");
         }
+
+        FiguraTexture texture = new FiguraTexture(this, name, image);
+        FiguraTexture oldText = renderer.customTextures.put(name, texture);
+        if (oldText != null)
+            oldText.closeFromRenderThread();
+        return texture;
     }
 
     public static class Instructions {

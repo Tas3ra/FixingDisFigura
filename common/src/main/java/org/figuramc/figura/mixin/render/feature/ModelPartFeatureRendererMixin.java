@@ -1,8 +1,11 @@
 package org.figuramc.figura.mixin.render.feature;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.renderer.*;
 import net.minecraft.client.renderer.feature.ModelPartFeatureRenderer;
 import net.minecraft.client.renderer.rendertype.RenderType;
@@ -11,9 +14,7 @@ import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -37,32 +38,30 @@ public class ModelPartFeatureRendererMixin {
         return snapshot.entrySet();
     }
 
-    @Inject(method = "render", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/model/geom/ModelPart;render(Lcom/mojang/blaze3d/vertex/PoseStack;Lcom/mojang/blaze3d/vertex/VertexConsumer;III)V", ordinal = 0), cancellable = true)
-    private <S> void figura$preRender(SubmitNodeCollection submitNodeCollection, MultiBufferSource.BufferSource bufferSource,
-                                      OutlineBufferSource outlineBufferSource, MultiBufferSource.BufferSource crumblingBufferSource, CallbackInfo ci, @Local SubmitNodeStorage.ModelPartSubmit modelSubmit) {
+    @WrapOperation(method = "render", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/model/geom/ModelPart;render(Lcom/mojang/blaze3d/vertex/PoseStack;Lcom/mojang/blaze3d/vertex/VertexConsumer;III)V", ordinal = 0))
+    private void figura$renderModelPart(ModelPart modelPart, PoseStack renderPoseStack, VertexConsumer vertexConsumer, int light, int overlay, int color,
+                                        Operation<Void> original, SubmitNodeCollection submitNodeCollection,
+                                        MultiBufferSource.BufferSource bufferSource, OutlineBufferSource outlineBufferSource,
+                                        MultiBufferSource.BufferSource crumblingBufferSource, @Local SubmitNodeStorage.ModelPartSubmit modelSubmit) {
         FiguraSubmitCallBackExtension callBackExtension = (FiguraSubmitCallBackExtension) (Object) modelSubmit;
 
+        boolean renderVanilla = true;
         for (var callback : new ArrayList<>(callBackExtension.figura$getPreRenderingCallbacks())) {
              if (!callback.apply(bufferSource, poseStack)) {
-                 ci.cancel();
+                 renderVanilla = false;
              }
         }
+        callBackExtension.figura$getPreRenderingCallbacks().clear();
 
-        if (ci.isCancelled()) {
+        try {
+            if (renderVanilla) {
+                original.call(modelPart, renderPoseStack, vertexConsumer, light, overlay, color);
+            }
+        } finally {
             for (var callback : new ArrayList<>(callBackExtension.figura$getPostRenderingCallbacks()))
                 callback.run();
 
             callBackExtension.figura$getPostRenderingCallbacks().clear();
         }
-        callBackExtension.figura$getPreRenderingCallbacks().clear();
-    }
-
-    @Inject(method = "render", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/model/geom/ModelPart;render(Lcom/mojang/blaze3d/vertex/PoseStack;Lcom/mojang/blaze3d/vertex/VertexConsumer;III)V", ordinal = 0, shift = At.Shift.AFTER))
-    private <S> void figura$postRender(SubmitNodeCollection submitNodeCollection, MultiBufferSource.BufferSource bufferSource,
-                                       OutlineBufferSource outlineBufferSource, MultiBufferSource.BufferSource crumblingBufferSource, CallbackInfo ci, @Local SubmitNodeStorage.ModelPartSubmit modelSubmit) {
-        FiguraSubmitCallBackExtension callBackExtension = (FiguraSubmitCallBackExtension) (Object) modelSubmit;
-        for (var callback : new ArrayList<>(callBackExtension.figura$getPostRenderingCallbacks()))
-             callback.run();
-        callBackExtension.figura$getPostRenderingCallbacks().clear();
     }
 }

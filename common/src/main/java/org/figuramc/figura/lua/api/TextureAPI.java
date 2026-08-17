@@ -135,18 +135,14 @@ public class TextureAPI {
             value = "textures.get")
     public FiguraTexture get(@LuaNotNil String name) {
         FiguraRenderer renderer = getRenderer();
-        synchronized (renderer) {
-            return renderer.customTextures.get(name);
-        }
+        return renderer.customTextures.get(name);
     }
 
     @LuaWhitelist
     @LuaMethodDoc("textures.get_textures")
     public List<FiguraTexture> getTextures() {
         FiguraRenderer renderer = getRenderer();
-        synchronized (renderer) {
-            return new ArrayList<>(renderer.textures.values());
-        }
+        return new ArrayList<>(renderer.textures.values());
     }
 
     @LuaWhitelist
@@ -201,9 +197,7 @@ public class TextureAPI {
     @LuaWhitelist
     public FiguraTexture __index(@LuaNotNil String name) {
         FiguraRenderer renderer = getRenderer();
-        synchronized (renderer) {
-            return renderer.getTexture(name);
-        }
+        return renderer.getTexture(name);
     }
 
     @Override

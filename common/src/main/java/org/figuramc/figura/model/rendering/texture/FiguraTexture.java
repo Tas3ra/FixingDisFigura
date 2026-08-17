@@ -42,6 +42,7 @@ import java.nio.file.Path;
 import java.util.Base64;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 @LuaWhitelist
 @LuaTypeDoc(
@@ -63,6 +64,7 @@ public class FiguraTexture extends SimpleTexture {
      * Native image holding the texture data for this texture.
      */
     private final NativeImage nativeImageTexture;
+    private final ReentrantReadWriteLock imageLock = new ReentrantReadWriteLock();
     private NativeImage backup;
     private boolean isClosed = false;
 
@@ -111,43 +113,56 @@ public class FiguraTexture extends SimpleTexture {
     }
 
     public void closeFromRenderThread() {
-        Minecraft.getInstance().execute(this::close);
+        if (RenderSystem.isOnRenderThread())
+            close();
+        else
+            Minecraft.getInstance().execute(this::close);
     }
 
     @Override
-    public synchronized void close() {
-        // Make sure it doesn't close twice (minecraft tries to close the texture when reloading textures
-        if (isClosed) return;
+    public void close() {
+        imageLock.writeLock().lock();
+        try {
+            // Make sure it doesn't close twice (minecraft tries to close the texture when reloading textures
+            if (isClosed) return;
 
-        isClosed = true;
+            isClosed = true;
 
-        // Close native images
-        if (nativeImageTexture != null)
-            nativeImageTexture.close();
-        if (backup != null)
-            backup.close();
+            // Close native images
+            if (nativeImageTexture != null)
+                nativeImageTexture.close();
+            if (backup != null)
+                backup.close();
 
-        super.close();
-        ((TextureManagerAccessor) Minecraft.getInstance().getTextureManager()).getByPath().remove(this.getLocation());
+            super.close();
+            ((TextureManagerAccessor) Minecraft.getInstance().getTextureManager()).getByPath().remove(this.getLocation());
+        } finally {
+            imageLock.writeLock().unlock();
+        }
     }
 
-    public synchronized void uploadIfDirty(boolean clamp, boolean blur) {
-        if (isClosed || nativeImageTexture == null)
-            return;
+    public void uploadIfDirty(boolean clamp, boolean blur) {
+        imageLock.writeLock().lock();
+        try {
+            if (isClosed || nativeImageTexture == null)
+                return;
 
-        if (!registered) {
-            Minecraft.getInstance().getTextureManager().register(this.getLocation(), this);
-            registered = true;
-        }
+            if (!registered) {
+                Minecraft.getInstance().getTextureManager().register(this.getLocation(), this);
+                registered = true;
+            }
 
-        if (dirty && !isClosed && nativeImageTexture != null) {
-            dirty = false;
+            if (dirty && !isClosed && nativeImageTexture != null) {
+                dirty = false;
 
-            AddressMode addressMode = clamp ? AddressMode.CLAMP_TO_EDGE : AddressMode.REPEAT;
-            FilterMode filterMode = blur ? FilterMode.LINEAR : FilterMode.NEAREST;
-            this.sampler = RenderSystem.getSamplerCache().getSampler(addressMode, addressMode, filterMode, filterMode, false);
+                AddressMode addressMode = clamp ? AddressMode.CLAMP_TO_EDGE : AddressMode.REPEAT;
+                FilterMode filterMode = blur ? FilterMode.LINEAR : FilterMode.NEAREST;
+                this.sampler = RenderSystem.getSamplerCache().getSampler(addressMode, addressMode, filterMode, filterMode, false);
 
-            this.doLoad(nativeImageTexture);
+                this.doLoad(nativeImageTexture);
+            }
+        } finally {
+            imageLock.writeLock().unlock();
         }
     }
 
@@ -159,20 +174,34 @@ public class FiguraTexture extends SimpleTexture {
         gpuDevice.createCommandEncoder().writeToTexture(this.texture, nativeImage);
     }
 
-    public synchronized void writeTexture(Path dest) throws IOException {
-        if (isClosed)
-            throw new IOException("Texture is closed");
+    public void writeTexture(Path dest) throws IOException {
+        imageLock.readLock().lock();
+        try {
+            if (isClosed)
+                throw new IOException("Texture is closed");
 
-        nativeImageTexture.writeToFile(dest);
+            nativeImageTexture.writeToFile(dest);
+        } finally {
+            imageLock.readLock().unlock();
+        }
     }
 
-    private void backupImage() {
+    private void backupImageUnlocked() {
         this.modified = true;
         if (this.backup == null)
-            backup = copy();
+            backup = copyUnlocked();
     }
 
-    public synchronized NativeImage copy() {
+    public NativeImage copy() {
+        imageLock.readLock().lock();
+        try {
+            return copyUnlocked();
+        } finally {
+            imageLock.readLock().unlock();
+        }
+    }
+
+    private NativeImage copyUnlocked() {
         if (isClosed || nativeImageTexture == null)
             return blankImage();
 
@@ -194,25 +223,35 @@ public class FiguraTexture extends SimpleTexture {
         return image;
     }
 
-    public synchronized int getWidth() {
-        if (isClosed || nativeImageTexture == null)
-            return 0;
-
+    public int getWidth() {
+        imageLock.readLock().lock();
         try {
-            return nativeImageTexture.getWidth();
-        } catch (IllegalStateException e) {
-            return 0;
+            if (isClosed || nativeImageTexture == null)
+                return 0;
+
+            try {
+                return nativeImageTexture.getWidth();
+            } catch (IllegalStateException e) {
+                return 0;
+            }
+        } finally {
+            imageLock.readLock().unlock();
         }
     }
 
-    public synchronized int getHeight() {
-        if (isClosed || nativeImageTexture == null)
-            return 0;
-
+    public int getHeight() {
+        imageLock.readLock().lock();
         try {
-            return nativeImageTexture.getHeight();
-        } catch (IllegalStateException e) {
-            return 0;
+            if (isClosed || nativeImageTexture == null)
+                return 0;
+
+            try {
+                return nativeImageTexture.getHeight();
+            } catch (IllegalStateException e) {
+                return 0;
+            }
+        } finally {
+            imageLock.readLock().unlock();
         }
     }
 
@@ -254,10 +293,13 @@ public class FiguraTexture extends SimpleTexture {
             ),
             value = "texture.get_pixel")
     public FiguraVec4 getPixel(int x, int y) {
+        imageLock.readLock().lock();
         try {
             return ColorUtils.abgrToRGBA(((NativeImageExtension)(Object) nativeImageTexture).figura$getPixelABGR(x, y));
         } catch (Exception e) {
             throw new LuaError(e.getMessage());
+        } finally {
+            imageLock.readLock().unlock();
         }
     }
 
@@ -280,12 +322,15 @@ public class FiguraTexture extends SimpleTexture {
             aliases = "pixel",
             value = "texture.set_pixel")
     public FiguraTexture setPixel(int x, int y, Object r, Double g, Double b, Double a) {
+        imageLock.writeLock().lock();
         try {
-            backupImage();
+            backupImageUnlocked();
             ((NativeImageExtension)(Object) nativeImageTexture).figura$setPixelABGR(x, y, ColorUtils.rgbaToIntABGR(parseColor("setPixel", r, g, b, a)));
             return this;
         } catch (Exception e) {
             throw new LuaError(e.getMessage());
+        } finally {
+            imageLock.writeLock().unlock();
         }
     }
 
@@ -312,39 +357,55 @@ public class FiguraTexture extends SimpleTexture {
             },
             value = "texture.fill")
     public FiguraTexture fill(int x, int y, int width, int height, Object r, Double g, Double b, Double a) {
+        imageLock.writeLock().lock();
         try {
-            backupImage();
+            backupImageUnlocked();
             nativeImageTexture.fillRect(x, y, width, height, ColorUtils.rgbaToIntABGR(parseColor("fill", r, g, b, a)));
             return this;
         } catch (Exception e) {
             throw new LuaError(e.getMessage());
+        } finally {
+            imageLock.writeLock().unlock();
         }
     }
 
     @LuaWhitelist
     @LuaMethodDoc("texture.update")
     public FiguraTexture update() {
-        this.dirty = true;
+        imageLock.writeLock().lock();
+        try {
+            this.dirty = true;
+        } finally {
+            imageLock.writeLock().unlock();
+        }
         return this;
     }
 
     @LuaWhitelist
     @LuaMethodDoc("texture.restore")
     public FiguraTexture restore() {
-        if (modified) {
-            this.nativeImageTexture.copyFrom(backup);
-            this.modified = false;
+        imageLock.writeLock().lock();
+        try {
+            if (modified && backup != null) {
+                this.nativeImageTexture.copyFrom(backup);
+                this.modified = false;
+            }
+            return this;
+        } finally {
+            imageLock.writeLock().unlock();
         }
-        return this;
     }
 
     @LuaWhitelist
     @LuaMethodDoc("texture.save")
     public String save() {
+        imageLock.readLock().lock();
         try {
             return Base64.getEncoder().encodeToString(((NativeImageExtension)(Object) nativeImageTexture).figura$asByteArray());
         } catch (Exception e) {
             throw new LuaError(e.getMessage());
+        } finally {
+            imageLock.readLock().unlock();
         }
     }
 

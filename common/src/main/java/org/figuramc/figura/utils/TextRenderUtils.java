@@ -71,6 +71,15 @@ public final class TextRenderUtils {
         }
     }
 
+    public static void clearImmediateTextTaskLayer() {
+        if (!immediateTextTaskLayer)
+            return;
+
+        IMMEDIATE_TEXT_TASKS.clear();
+        deferringTextTasks = false;
+        immediateTextTaskLayer = false;
+    }
+
     public static void queueTextTask(Matrix4f matrix, List<Component> text, TextUtils.Alignment alignment,
                                      boolean shadow, boolean outline, int backgroundColor, int outlineColor,
                                      int opacityColor, int light, int width, int height, float vertexOffset) {

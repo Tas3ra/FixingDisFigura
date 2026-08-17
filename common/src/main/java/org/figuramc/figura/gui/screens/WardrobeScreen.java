@@ -25,6 +25,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 public class WardrobeScreen extends AbstractPanelScreen {
+    private static final String FIXING_DISFIGURA_RELEASES = "https://github.com/Tas3ra/FixingDisFigura/releases";
     private static final Component DEBUG_MOTD_FALLBACK = Component.literal("No motd could be loaded.\n\n")
             .append("Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.\n")
                     .withStyle(ChatFormatting.GRAY)
@@ -37,7 +38,7 @@ public class WardrobeScreen extends AbstractPanelScreen {
 
     private Label panic;
 
-    private Button upload, delete, back;
+    private Button upload, delete, back, avatarSettings;
 
     public WardrobeScreen(Screen parentScreen) {
         super(parentScreen, FiguraText.of("gui.panels.title.wardrobe"));
@@ -113,39 +114,16 @@ public class WardrobeScreen extends AbstractPanelScreen {
         // -- bottom -- // 
 
         // version
-        MutableComponent versionText = FiguraText.of().append(" " + FiguraMod.VERSION.noBuildString()).withStyle(ChatFormatting.ITALIC);
-        int versionStatus = NetworkStuff.latestVersion != null ? NetworkStuff.latestVersion.compareTo(FiguraMod.VERSION) : 0;
-        boolean oldVersion = versionStatus > 0;
-        if (oldVersion) {
-            versionText
-                    .append(" ")
-                    .append(Component.literal("=")
-                            .withStyle(Style.EMPTY
-                                    .withFont(new FontDescription.Resource(UIHelper.UI_FONT))
-                                    .withItalic(false)
-                                    .applyLegacyFormat(ChatFormatting.WHITE)
-                            ))
-                    .withStyle(Style.EMPTY
-                            .applyFormat(ChatFormatting.AQUA)
-                            .withHoverEvent(new HoverEvent.ShowText(
-                                    FiguraText.of("gui.new_version.tooltip", Component.literal(NetworkStuff.latestVersion.toString()).withStyle(ChatFormatting.GREEN))
-                            ))
-                            .withClickEvent(new TextUtils.FiguraClickEvent(UIHelper.openURL(
-                                NetworkStuff.latestVersion.pre==null ? 
-                                    (FiguraMod.Links.Modrinth.url + "/versions") : 
-                                    (FiguraMod.Links.Github.url + "/releases")
-                                ))
-                            )
-                    );
-        } else if (versionStatus < 0) {
-            versionText.withStyle(Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(
-                    FiguraText.of("gui.old_version.tooltip", Component.literal(NetworkStuff.latestVersion.toString()).withStyle(ChatFormatting.LIGHT_PURPLE))
-            )));
-        }
+        MutableComponent versionText = Component.literal(" FixingDisFigura " + FiguraMod.VERSION.noBuildString())
+                .withStyle(ChatFormatting.ITALIC)
+                .withStyle(Style.EMPTY
+                        .withHoverEvent(new HoverEvent.ShowText(Component.literal("Open FixingDisFigura releases")))
+                        .withClickEvent(new TextUtils.FiguraClickEvent(UIHelper.openURL(FIXING_DISFIGURA_RELEASES)))
+                );
 
         Label version = new Label(versionText, middle, this.height - 4, TextUtils.Alignment.CENTER);
         addRenderableWidget(version);
-        if (!oldVersion) version.setAlpha(0x33);
+        version.setAlpha(0x66);
         version.setY(version.getRawY() - version.getHeight());
 
         int rightSide = Math.min(panels, 134);
@@ -159,14 +137,13 @@ public class WardrobeScreen extends AbstractPanelScreen {
         rightSide = panels / 2 + 52;
 
         // avatar settings
-        Button avatarSettings;
         addRenderableWidget(avatarSettings = new Button(
                 this.width - rightSide, 28, 24, 24,
                 0, 0, 24,
                 new FiguraIdentifier("textures/gui/avatar_settings.png"),
                 72, 24,
-                FiguraText.of("gui.avatar_settings.tooltip").append("\n").append(FiguraText.of("gui.not_available_yet").withStyle(ChatFormatting.RED)),
-                bx -> {}
+                FiguraText.of("gui.avatar_settings.tooltip"),
+                bx -> Minecraft.getInstance().setScreen(new AvatarConfigEditorScreen(this))
         ));
         avatarSettings.setActive(false);
 
@@ -247,6 +224,7 @@ public class WardrobeScreen extends AbstractPanelScreen {
         // backend buttons
         Avatar avatar;
         upload.setActive(NetworkStuff.canUpload() && !AvatarManager.localUploaded && (avatar = AvatarManager.getAvatarForPlayer(FiguraMod.getLocalPlayerUUID())) != null && avatar.nbt != null && avatar.loaded);
+        avatarSettings.setActive((avatar = AvatarManager.getAvatarForPlayer(FiguraMod.getLocalPlayerUUID())) != null && avatar.nbt != null && avatar.loaded && avatar.isHost);
         delete.setActive(NetworkStuff.isConnected() && AvatarManager.localUploaded);
 
         updateMotdWidget();

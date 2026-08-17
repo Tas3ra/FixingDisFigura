@@ -46,6 +46,9 @@ public class BlockbenchModel {
         float[] rotation;
         float[] origin;
         float inflate;
+        String render_order;
+        String shading;
+        Boolean shade;
 
         Boolean visibility;
         Boolean export;
@@ -64,6 +67,8 @@ public class BlockbenchModel {
         Boolean export;
         float[] origin;
         float[] rotation;
+        Boolean shade;
+        String render_order;
 
         // cannot parse children
         // same reason as outliner
@@ -122,5 +127,6 @@ public class BlockbenchModel {
 
     public static class KeyFrameData {
         String x, y, z;
+        JsonArray vector;
     }
 }

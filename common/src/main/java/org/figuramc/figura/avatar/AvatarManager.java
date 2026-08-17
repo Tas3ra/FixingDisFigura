@@ -34,6 +34,7 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
+import java.util.regex.Pattern;
 
 /**
  * Manages all the avatars that are currently loaded in memory, and also
@@ -46,6 +47,11 @@ public class AvatarManager {
     private static final Set<UUID> FETCHED_USERS = new HashSet<>();
 
     private static final Int2ObjectMap<Avatar> LOADED_CEM = new Int2ObjectOpenHashMap<>();
+    private static final Pattern PLAYER_NAME_PATTERN = Pattern.compile("[A-Za-z0-9_]{1,16}");
+    private static final long PROFILE_ID_RETRY_DELAY_MS = 30_000L;
+    private static final Map<String, UUID> PROFILE_ID_CACHE = new ConcurrentHashMap<>();
+    private static final Map<String, Long> FAILED_PROFILE_ID_LOOKUPS = new ConcurrentHashMap<>();
+    private static final Set<String> PENDING_PROFILE_ID_LOOKUPS = ConcurrentHashMap.newKeySet();
 
     public static final FiguraResourceListener RESOURCE_RELOAD_EVENT = FiguraResourceListener.createResourceListener("resource_reload_event", manager -> executeAll("resourceReloadEvent", Avatar::resourceReloadEvent));
 
@@ -183,7 +189,7 @@ public class AvatarManager {
             return null;
 
         UUID id = profile.partialProfile().id();
-        if (id != null)
+        if (id != null && id.version() == 4)
             return id;
 
         String name = profile.partialProfile().name();
@@ -201,10 +207,21 @@ public class AvatarManager {
             return Minecraft.getInstance().player.getUUID();
 
         for (Map.Entry<String, UUID> entry : EntityUtils.getPlayerList().entrySet()) {
-            if (entry.getKey().equalsIgnoreCase(name))
+            if (entry.getKey().equalsIgnoreCase(name)) {
+                cacheProfileId(name, entry.getValue());
                 return entry.getValue();
+            }
         }
 
+        String cacheKey = profileCacheKey(name);
+        if (cacheKey == null)
+            return null;
+
+        UUID cachedId = PROFILE_ID_CACHE.get(cacheKey);
+        if (cachedId != null)
+            return cachedId;
+
+        requestProfileIdLookup(name, cacheKey);
         return null;
     }
 
@@ -417,6 +434,55 @@ public class AvatarManager {
 
         FiguraMod.debug("Getting userdata for " + id);
         NetworkStuff.getUser(user);
+    }
+
+    private static String profileCacheKey(String name) {
+        if (name == null || name.isBlank())
+            return null;
+
+        String trimmed = name.trim();
+        return PLAYER_NAME_PATTERN.matcher(trimmed).matches() ? trimmed.toLowerCase(Locale.ROOT) : null;
+    }
+
+    private static void cacheProfileId(String name, UUID id) {
+        String cacheKey = profileCacheKey(name);
+        if (cacheKey != null && id != null && id.version() == 4) {
+            PROFILE_ID_CACHE.put(cacheKey, id);
+            FAILED_PROFILE_ID_LOOKUPS.remove(cacheKey);
+        }
+    }
+
+    private static void requestProfileIdLookup(String name, String cacheKey) {
+        long now = System.currentTimeMillis();
+        Long failedAt = FAILED_PROFILE_ID_LOOKUPS.get(cacheKey);
+        if (failedAt != null && now - failedAt < PROFILE_ID_RETRY_DELAY_MS)
+            return;
+
+        if (!PENDING_PROFILE_ID_LOOKUPS.add(cacheKey))
+            return;
+
+        String trimmedName = name.trim();
+        Minecraft client = Minecraft.getInstance();
+        ResolvableProfile.createUnresolved(trimmedName)
+                .resolveProfile(client.services().profileResolver())
+                .whenComplete((profile, throwable) -> {
+                    PENDING_PROFILE_ID_LOOKUPS.remove(cacheKey);
+
+                    UUID id = profile == null ? null : profile.id();
+                    if (throwable != null || id == null || id.version() != 4) {
+                        FAILED_PROFILE_ID_LOOKUPS.put(cacheKey, System.currentTimeMillis());
+                        if (throwable != null)
+                            FiguraMod.debug("Failed to resolve profile id for {}", trimmedName, throwable);
+                        else
+                            FiguraMod.debug("Failed to resolve profile id for {}", trimmedName);
+                        return;
+                    }
+
+                    PROFILE_ID_CACHE.put(cacheKey, id);
+                    FAILED_PROFILE_ID_LOOKUPS.remove(cacheKey);
+                    client.execute(() -> getAvatarForPlayer(id));
+                    FiguraMod.debug("Resolved profile id for {} as {}", trimmedName, id);
+                });
     }
 
     // -- badges -- // 

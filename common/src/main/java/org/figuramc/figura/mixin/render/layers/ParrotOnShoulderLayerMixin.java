@@ -44,6 +44,7 @@ public abstract class ParrotOnShoulderLayerMixin extends RenderLayer<AvatarRende
                 (leftShoulder && !avatar.luaRuntime.vanilla_model.LEFT_PARROT.checkVisible() ||
                 !leftShoulder && !avatar.luaRuntime.vanilla_model.RIGHT_PARROT.checkVisible())
         ) {
+            avatar.clearPivotPart(leftShoulder ? ParentType.LeftParrotPivot : ParentType.RightParrotPivot);
             ci.cancel();
             return;
         }

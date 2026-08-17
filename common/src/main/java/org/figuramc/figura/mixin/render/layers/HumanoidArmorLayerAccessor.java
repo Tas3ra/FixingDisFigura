@@ -13,4 +13,8 @@ public interface HumanoidArmorLayerAccessor<S extends HumanoidRenderState, M ext
     @Intrinsic
     @Invoker("usesInnerModel")
     boolean usesInnerModel(EquipmentSlot armorSlot);
+
+    @Intrinsic
+    @Invoker("getArmorModel")
+    A figura$getArmorModel(S renderState, EquipmentSlot armorSlot);
 }

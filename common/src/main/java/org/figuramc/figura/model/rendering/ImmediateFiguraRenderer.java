@@ -2,7 +2,6 @@ package org.figuramc.figura.model.rendering;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import com.mojang.datafixers.util.Pair;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.debug.DebugScreenEntries;
 import net.minecraft.client.renderer.*;
@@ -30,7 +29,6 @@ import org.figuramc.figura.utils.TextRenderUtils;
 import org.figuramc.figura.utils.ui.UIHelper;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.Consumer;
 
 public class ImmediateFiguraRenderer extends FiguraRenderer {
@@ -67,31 +65,41 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
 
     @Override
     public void updateMatrices() {
-        if (root == null)
-            return;
-
         // flag rendering state
         this.isRendering = true;
 
-        pivotCustomizations.values().forEach(Queue::clear);
+        try {
+            if (root == null)
+                return;
 
-        // setup root customizations
-        PartCustomization customization = setupRootCustomization(1.5d);
+            clearPivotCustomizations();
 
-        // Push transform
-        customizationStack.push(customization);
+            // setup root customizations
+            PartCustomization customization = setupRootCustomization(1.5d);
 
-        // world matrices
-        CAMERA_POS_TO_WORLD_MATRIX.set(FiguraRenderer.worldToCameraPosMatrix().invert());
+            // Push transform
+            customizationStack.push(customization);
 
-        // calculate each part matrices
-        calculatePartMatrices(root);
+            // world matrices
+            CAMERA_POS_TO_WORLD_MATRIX.set(FiguraRenderer.worldToCameraPosMatrix().invert());
 
-        // finish rendering
-        customizationStack.pop();
-        checkEmpty();
+            // calculate each part matrices
+            calculatePartMatrices(root, currentFilterScheme.initialValue);
 
-        this.isRendering = false;
+            // Pivot matrices are consumed by vanilla render layers after this pass. They should keep
+            // following Figura's transform tree even when the matching vanilla model part is hidden.
+            clearPivotCustomizations();
+            collectPivotMatrices(root, PartFilterScheme.PIVOTS.initialValue);
+
+            // finish rendering
+            customizationStack.pop();
+            checkEmpty();
+        } finally {
+            customizationStack.clear();
+            this.isRendering = false;
+            if (this.dirty)
+                clean();
+        }
     }
 
     public int getComplexity() {
@@ -119,101 +127,111 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
     }
 
     protected int commonRender(double vertOffset) {
-        if (root == null)
-            return 0;
-
         // flag rendering state
         this.isRendering = true;
-        boolean immediateTextTaskLayer = bufferSource instanceof MultiBufferSource.BufferSource && TextRenderUtils.beginImmediateTextTaskLayer();
+        boolean immediateTextTaskLayer = false;
+        try {
+            if (root == null)
+                return 0;
 
-        // iris fix
-        int irisConfig = UIHelper.paperdoll || !ClientAPI.hasShaderPackMod() ? 0 : Configs.IRIS_COMPATIBILITY_FIX.value;
-        boolean worldLikeRender = avatar.renderMode == EntityRenderMode.WORLD || avatar.renderMode == EntityRenderMode.FIRST_PERSON_WORLD;
-        doIrisEmissiveFix = (irisConfig >= 2 && ClientAPI.hasShaderPack()) || (avatar.renderMode != EntityRenderMode.RENDER && !worldLikeRender);
-        offsetRenderLayers = irisConfig >= 1;
+            immediateTextTaskLayer = bufferSource instanceof MultiBufferSource.BufferSource && TextRenderUtils.beginImmediateTextTaskLayer();
 
-        // custom textures
-        for (FiguraTextureSet set : textureSets)
-            set.uploadIfNeeded();
-        for (FiguraTexture texture : customTextures.values())
-            texture.uploadIfDirty(false, false);
+            // iris fix
+            int irisConfig = UIHelper.paperdoll || !ClientAPI.hasShaderPackMod() ? 0 : Configs.IRIS_COMPATIBILITY_FIX.value;
+            boolean worldLikeRender = avatar.renderMode == EntityRenderMode.WORLD || avatar.renderMode == EntityRenderMode.FIRST_PERSON_WORLD;
+            doIrisEmissiveFix = (irisConfig >= 2 && ClientAPI.hasShaderPack()) || (avatar.renderMode != EntityRenderMode.RENDER && !worldLikeRender);
+            offsetRenderLayers = irisConfig >= 1;
 
-        // Set shouldRenderPivots
-        int config = Configs.RENDER_DEBUG_PARTS_PIVOT.value;
-        if (config <= 1 || !Minecraft.getInstance().debugEntries.isCurrentlyEnabled(DebugScreenEntries.ENTITY_HITBOXES) || (!avatar.isHost && config < 3))
-            shouldRenderPivots = 0;
-        else
-            shouldRenderPivots = config;
+            // custom textures
+            for (FiguraTextureSet set : textureSets)
+                set.uploadIfNeeded();
+            for (FiguraTexture texture : customTextures.values())
+                texture.uploadIfDirty(false, false);
 
-        // world matrices
-        if (allowMatrixUpdate) {
-            CAMERA_POS_TO_WORLD_MATRIX.set(FiguraRenderer.worldToCameraPosMatrix().invert());
-        }
+            // Set shouldRenderPivots
+            int config = Configs.RENDER_DEBUG_PARTS_PIVOT.value;
+            if (config <= 1 || !Minecraft.getInstance().debugEntries.isCurrentlyEnabled(DebugScreenEntries.ENTITY_HITBOXES) || (!avatar.isHost && config < 3))
+                shouldRenderPivots = 0;
+            else
+                shouldRenderPivots = config;
 
-        // complexity
-        int prev = avatar.complexity.remaining;
-        int[] remainingComplexity = new int[] {prev};
-
-        // render all model parts
-        if (root.customization.visible) {
-            if (currentFilterScheme.parentType.isSeparate) {
-                List<FiguraModelPart> parts = separatedParts.get(currentFilterScheme.parentType);
-                if (parts != null) {
-                    boolean renderLayer = !currentFilterScheme.parentType.isRenderLayer;
-                    if (renderLayer) {
-                        PartCustomization customization = setupRootCustomization(vertOffset);
-                        customizationStack.push(customization); // push root
-                        customizationStack.push(root.customization); // push "models"
-                    }
-
-                    for (FiguraModelPart part : parts) {
-                        if (currentFilterScheme.parentType == ParentType.Item && part != itemToRender)
-                            continue;
-
-                        boolean saved = part.savedCustomization != null;
-                        if (saved) {
-                            customizationStack.push(part.savedCustomization);
-                            part.savedCustomization = null;
-                        }
-
-                        renderPart(part, remainingComplexity, currentFilterScheme.initialValue);
-
-                        if (saved) customizationStack.pop();
-                    }
-
-                    if (renderLayer) {
-                        customizationStack.pop(); // pop "models"
-                        customizationStack.pop(); // pop root
-                    }
-                }
-            } else {
-                PartCustomization customization = setupRootCustomization(vertOffset);
-                customizationStack.push(customization);
-                renderPart(root, remainingComplexity, currentFilterScheme.initialValue);
-                customizationStack.pop();
+            // world matrices
+            if (allowMatrixUpdate) {
+                CAMERA_POS_TO_WORLD_MATRIX.set(FiguraRenderer.worldToCameraPosMatrix().invert());
             }
 
-            // push vertices to vertex consumer
-            FiguraMod.pushProfiler("draw");
-            FiguraMod.pushProfiler("primary");
-            VERTEX_BUFFER.consume(true, bufferSource);
-            FiguraMod.popPushProfiler("secondary");
-            VERTEX_BUFFER.consume(false, bufferSource);
-            FiguraMod.popProfiler(2);
-            if (immediateTextTaskLayer)
+            // complexity
+            int prev = avatar.complexity.remaining;
+            int[] remainingComplexity = new int[] {prev};
+
+            // render all model parts
+            if (root.customization.visible) {
+                if (currentFilterScheme.parentType.isSeparate) {
+                    List<FiguraModelPart> parts = separatedParts.get(currentFilterScheme.parentType);
+                    if (parts != null) {
+                        boolean renderLayer = !currentFilterScheme.parentType.isRenderLayer;
+                        if (renderLayer) {
+                            PartCustomization customization = setupRootCustomization(vertOffset);
+                            customizationStack.push(customization); // push root
+                            customizationStack.push(root.customization); // push "models"
+                        }
+
+                        for (FiguraModelPart part : parts) {
+                            if (currentFilterScheme.parentType == ParentType.Item && part != itemToRender)
+                                continue;
+
+                            boolean saved = part.savedCustomization != null;
+                            if (saved) {
+                                customizationStack.push(part.savedCustomization);
+                                part.savedCustomization = null;
+                            }
+
+                            renderPart(part, remainingComplexity, currentFilterScheme.initialValue);
+
+                            if (saved) customizationStack.pop();
+                        }
+
+                        if (renderLayer) {
+                            customizationStack.pop(); // pop "models"
+                            customizationStack.pop(); // pop root
+                        }
+                    }
+                } else {
+                    PartCustomization customization = setupRootCustomization(vertOffset);
+                    customizationStack.push(customization);
+                    renderPart(root, remainingComplexity, currentFilterScheme.initialValue);
+                    customizationStack.pop();
+                }
+
+                // push vertices to vertex consumer
+                FiguraMod.pushProfiler("draw");
+                FiguraMod.pushProfiler("primary");
+                VERTEX_BUFFER.consume(true, bufferSource);
+                FiguraMod.popPushProfiler("secondary");
+                VERTEX_BUFFER.consume(false, bufferSource);
+                FiguraMod.popProfiler(2);
+                if (immediateTextTaskLayer) {
+                    TextRenderUtils.renderImmediateTextTaskLayer((MultiBufferSource.BufferSource) bufferSource);
+                    immediateTextTaskLayer = false;
+                }
+
+                // finish rendering
+                checkEmpty();
+            } else if (immediateTextTaskLayer) {
                 TextRenderUtils.renderImmediateTextTaskLayer((MultiBufferSource.BufferSource) bufferSource);
+                immediateTextTaskLayer = false;
+            }
 
-            // finish rendering
-            checkEmpty();
-        } else if (immediateTextTaskLayer) {
-            TextRenderUtils.renderImmediateTextTaskLayer((MultiBufferSource.BufferSource) bufferSource);
+            return prev - Math.max(remainingComplexity[0], 0);
+        } finally {
+            if (immediateTextTaskLayer)
+                TextRenderUtils.clearImmediateTextTaskLayer();
+            VERTEX_BUFFER.clear();
+            customizationStack.clear();
+            this.isRendering = false;
+            if (this.dirty)
+                clean();
         }
-
-        this.isRendering = false;
-        if (this.dirty)
-            clean();
-
-        return prev - Math.max(remainingComplexity[0], 0);
     }
 
     protected PartCustomization setupRootCustomization(double vertOffset) {
@@ -396,7 +414,7 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
                     // render pivot parts
                     if (renderPivotParts && part.parentType.isPivot) {
                         FiguraMod.popPushProfiler("savePivotParts");
-                        savePivotTransform(part.parentType, peek);
+                        savePivotTransform(part, peek);
                     }
                 } finally {
                     customizationStack.pop();
@@ -563,11 +581,20 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
         return Float.isFinite(lineWidth) && lineWidth > 0f ? lineWidth : 1f;
     }
 
-    protected void savePivotTransform(ParentType parentType, PartCustomization customization) {
+    protected void savePivotTransform(FiguraModelPart part, PartCustomization customization) {
+        ParentType parentType = part.parentType;
         FiguraMat4 currentPosMat = customization.getPositionMatrix();
         FiguraMat3 currentNormalMat = customization.getNormalMatrix();
-        ConcurrentLinkedQueue<Pair<FiguraMat4, FiguraMat3>> queue = pivotCustomizations.computeIfAbsent(parentType, p -> new ConcurrentLinkedQueue<>());
-        queue.add(new Pair<>(currentPosMat, currentNormalMat)); // These are COPIES, so ok to add
+        Queue<PivotCustomization> queue = getPivotCustomizationQueue(parentType);
+        if (queue != null)
+            queue.add(new PivotCustomization(currentPosMat, currentNormalMat, getModelDepth(part))); // These are COPIES, so ok to add
+    }
+
+    private static int getModelDepth(FiguraModelPart part) {
+        int depth = 0;
+        for (FiguraModelPart current = part; current != null; current = current.parent)
+            depth++;
+        return depth;
     }
 
     protected FiguraMat4 partToWorldMatrices(PartCustomization cust) {
@@ -583,15 +610,15 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
         return customizePeek;
     }
 
-    protected void calculatePartMatrices(FiguraModelPart part) {
+    protected void calculatePartMatrices(FiguraModelPart part, boolean prevPredicate) {
         FiguraMod.pushProfiler(part.name);
 
         PartCustomization custom = part.customization;
 
         // Store old visibility, but overwrite it in case we only want to render certain parts
         FiguraMod.pushProfiler("predicate");
-        Boolean thisPassedPredicate = currentFilterScheme.test(part.parentType, true);
-        if (thisPassedPredicate == null) {
+        Boolean thisPassedPredicate = currentFilterScheme.test(part.parentType, prevPredicate);
+        if (thisPassedPredicate == null || !custom.visible) {
             FiguraMod.popProfiler(2);
             return;
         }
@@ -602,6 +629,14 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
         FiguraMod.popPushProfiler("copyVanillaPart");
         part.applyVanillaTransforms(vanillaModelData);
         part.applyExtraTransforms(customizationStack.peek());
+
+        FiguraMod.popPushProfiler("checkVanillaVisible");
+        if (!ignoreVanillaVisibility && custom.vanillaVisible != null && !custom.vanillaVisible) {
+            FiguraMod.popPushProfiler("removeVanillaTransforms");
+            part.resetVanillaTransforms();
+            FiguraMod.popProfiler(2);
+            return;
+        }
 
         // push customization stack
         FiguraMod.popPushProfiler("calculatePartMatrices");
@@ -623,7 +658,7 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
                 pivotOffsetter.recalculate();
                 customizationStack.push(pivotOffsetter);
                 try {
-                    savePivotTransform(part.parentType, customizationStack.peek());
+                    savePivotTransform(part, customizationStack.peek());
                 } finally {
                     customizationStack.pop();
                 }
@@ -633,12 +668,57 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
         // render children
         FiguraMod.popPushProfiler("children");
         for (FiguraModelPart child : part.children)
-            calculatePartMatrices(child);
+            calculatePartMatrices(child, thisPassedPredicate);
 
         // reset the parent
         part.resetVanillaTransforms();
 
         // pop
+        customizationStack.pop();
+        FiguraMod.popProfiler(2);
+    }
+
+    protected void collectPivotMatrices(FiguraModelPart part, boolean prevPredicate) {
+        FiguraMod.pushProfiler(part.name);
+
+        PartCustomization custom = part.customization;
+
+        FiguraMod.pushProfiler("predicate");
+        Boolean thisPassedPredicate = PartFilterScheme.PIVOTS.test(part.parentType, prevPredicate);
+        if (thisPassedPredicate == null || !custom.visible) {
+            FiguraMod.popProfiler(2);
+            return;
+        }
+
+        FiguraMod.popPushProfiler("copyVanillaPart");
+        part.applyVanillaTransforms(vanillaModelData);
+        part.applyExtraTransforms(customizationStack.peek());
+
+        FiguraMod.popPushProfiler("calculatePartMatrices");
+        custom.recalculate();
+        FiguraMod.popPushProfiler("applyOnStack");
+        customizationStack.push(custom);
+
+        if (thisPassedPredicate && part.parentType.isPivot && allowPivotParts) {
+            FiguraMod.popPushProfiler("savePivotParts");
+            FiguraVec3 pivot = custom.getPivot().copy().add(custom.getOffsetPivot());
+            PartCustomization pivotOffsetter = new PartCustomization();
+            pivotOffsetter.setPos(pivot);
+            pivotOffsetter.recalculate();
+            customizationStack.push(pivotOffsetter);
+            try {
+                savePivotTransform(part, customizationStack.peek());
+            } finally {
+                customizationStack.pop();
+            }
+        }
+
+        FiguraMod.popPushProfiler("children");
+        for (FiguraModelPart child : part.children)
+            collectPivotMatrices(child, thisPassedPredicate);
+
+        part.resetVanillaTransforms();
+
         customizationStack.pop();
         FiguraMod.popProfiler(2);
     }
@@ -697,7 +777,7 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
             return ret;
 
         ret.fullBright = types.isFullBright();
-        if (types == FiguraRenderTypes.LINES || types == FiguraRenderTypes.LINES_STRIP)
+        if (types.needsLineWidth())
             ret.lineWidth = figura$getLineWidth();
 
         if (offsetRenderLayers && !primary && types.isOffset())
@@ -780,6 +860,11 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
                     consumer.accept(vertexConsumer);
             }
             map.clear();
+        }
+
+        public void clear() {
+            primaryBuffers.clear();
+            secondaryBuffers.clear();
         }
     }
 }

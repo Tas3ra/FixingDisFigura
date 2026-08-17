@@ -98,6 +98,7 @@
     "render.layers.CustomHeadLayerMixin",
     "render.layers.EquipmentLayerRendererAccessor",
     "render.layers.HumanoidArmorLayerAccessor",
+    "render.layers.HumanoidArmorLayerMixin",
     "render.layers.ParrotOnShoulderLayerMixin",
     "render.layers.elytra.ElytraLayerMixin",
     "render.layers.elytra.ElytraModelAccessor",

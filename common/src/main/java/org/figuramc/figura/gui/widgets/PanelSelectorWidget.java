@@ -66,6 +66,9 @@ public class PanelSelectorWidget extends AbstractContainerElement {
             createPanelButton(s, icon, s.getClass() == selected, buttonX, buttonWidth - 4);
         }
 
+        if (this.selected == null && !buttons.isEmpty())
+            this.selected = buttons.get(0);
+
         // locked buttons
         if (FiguraMod.debugModeEnabled()) {
             for (int i : PANELS_BLACKLIST) {
@@ -95,6 +98,12 @@ public class PanelSelectorWidget extends AbstractContainerElement {
 
     @Override
     public void render(GuiGraphics gui, int mouseX, int mouseY, float delta) {
+        if (selected == null) {
+            UIHelper.blitSliced(gui, getX(), getY(), getWidth(), getHeight() - 4, BACKGROUND);
+            super.render(gui, mouseX, mouseY, delta);
+            return;
+        }
+
         UIHelper.blitSliced(gui, getX(), getY(), selected.getX() - getX(), getHeight() - 4, BACKGROUND);
         UIHelper.blitSliced(gui, selected.getX() + selected.getWidth(), getY(), getWidth() - selected.getX() - selected.getWidth(), getHeight() - 4, BACKGROUND);
         super.render(gui, mouseX, mouseY, delta);

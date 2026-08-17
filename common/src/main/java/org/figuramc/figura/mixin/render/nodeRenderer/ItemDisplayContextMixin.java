@@ -18,6 +18,8 @@ public class ItemDisplayContextMixin implements FiguraSubmitCallBackExtension {
     private final List<BiFunction<MultiBufferSource, PoseStack, Boolean>> figura$preRenderingCallback = new ArrayList<>();
     @Unique
     private final List<Runnable> figura$postRenderingCallback = new ArrayList<>();
+    @Unique
+    private boolean figura$consumeCallbacksOnSubmit = true;
 
     @Override
     public void figura$addPreRenderingCallback(BiFunction<MultiBufferSource, PoseStack, Boolean> callback) {
@@ -37,5 +39,15 @@ public class ItemDisplayContextMixin implements FiguraSubmitCallBackExtension {
     @Override
     public List<Runnable> figura$getPostRenderingCallbacks() {
         return figura$postRenderingCallback;
+    }
+
+    @Override
+    public boolean figura$consumeCallbacksOnSubmit() {
+        return figura$consumeCallbacksOnSubmit;
+    }
+
+    @Override
+    public void figura$setConsumeCallbacksOnSubmit(boolean consume) {
+        this.figura$consumeCallbacksOnSubmit = consume;
     }
 }

@@ -14,6 +14,17 @@ logs/
 *.log
 *.hprof
 
+# Local prototypes and script experiments
+/ZeraNet/
+/avatar_templates/
+/lua/
+/tools/
+*.luac
+luac.out
+
+# Local test servers
+/test-servers/
+
 # IDE
 .idea/
 .vscode/

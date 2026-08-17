@@ -81,6 +81,7 @@ public abstract class CustomHeadLayerMixin<S extends LivingEntityRenderState, M 
 
         // script hide
         if (localAvatar.luaRuntime != null && !localAvatar.luaRuntime.vanilla_model.HELMET_ITEM.checkVisible()) {
+            localAvatar.clearPivotPart(ParentType.HelmetItemPivot);
             avatar = null;
             ci.cancel();
             return;

@@ -16,6 +16,7 @@ import org.figuramc.figura.math.vector.FiguraVec2;
 import org.figuramc.figura.math.vector.FiguraVec3;
 import org.figuramc.figura.model.FiguraModelPart;
 import org.figuramc.figura.model.PartCustomization;
+import org.figuramc.figura.model.rendering.texture.FiguraRenderTypes;
 import org.figuramc.figura.utils.LuaUtils;
 
 @LuaWhitelist
@@ -40,10 +41,12 @@ public abstract class RenderTask {
 
     public void render(PartCustomization.PartCustomizationStack stack, MultiBufferSource buffer, int light, int overlay) {
         customization.recalculate();
+        FiguraRenderTypes parentPrimaryRenderType = stack.peek().getPrimaryRenderType();
+        boolean inheritFullBright = customization.light == null && parentPrimaryRenderType != null && parentPrimaryRenderType.isFullBright();
         stack.push(customization);
         try {
             PoseStack poseStack = stack.peek().copyIntoGlobalPoseStack();
-            render(poseStack, buffer, light, overlay);
+            render(poseStack, buffer, inheritFullBright ? LightTexture.FULL_BRIGHT : light, overlay);
         } finally {
             stack.pop();
         }

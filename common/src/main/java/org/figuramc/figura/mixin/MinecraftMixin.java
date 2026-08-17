@@ -56,6 +56,8 @@ public abstract class MinecraftMixin {
 
     @Unique
     private boolean scriptMouseUnlock = false;
+    @Unique
+    private boolean figura$popupButtonWasDown = false;
 
     @Inject(at = @At("RETURN"), method = "handleKeybinds")
     private void handleKeybinds(CallbackInfo ci) {
@@ -96,7 +98,11 @@ public abstract class MinecraftMixin {
         }
 
         // popup menu button
-        if (Configs.POPUP_BUTTON.keyBind.isDown()) {
+        boolean popupButtonDown = Configs.POPUP_BUTTON.keyBind.isDown();
+        if (PopupMenu.isVolumePanelOpen()) {
+            if (popupButtonDown && !figura$popupButtonWasDown)
+                PopupMenu.close();
+        } else if (popupButtonDown && (!figura$popupButtonWasDown || PopupMenu.isEnabled())) {
             PopupMenu.setEnabled(true);
 
             if (!PopupMenu.hasEntity())
@@ -104,6 +110,7 @@ public abstract class MinecraftMixin {
         } else if (PopupMenu.isEnabled() && !PopupMenu.isVolumePanelOpen()) {
             PopupMenu.run();
         }
+        figura$popupButtonWasDown = popupButtonDown;
 
         // unlock cursor :p
         Avatar avatar = AvatarManager.getAvatarForPlayer(FiguraMod.getLocalPlayerUUID());

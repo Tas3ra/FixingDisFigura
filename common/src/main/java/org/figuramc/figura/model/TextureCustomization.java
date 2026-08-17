@@ -47,11 +47,9 @@ public class TextureCustomization {
             return null;
 
         String name = resourceLocation.toString();
-        synchronized (renderer) {
-            FiguraTexture texture = renderer.customTextures.get(name);
-            if (texture != null)
-                return texture;
-        }
+        FiguraTexture texture = renderer.customTextures.get(name);
+        if (texture != null)
+            return texture;
 
         // is there a way to check if an atlas exists without getAtlas? cause that is the only thing that will cause an error, and try catch blocks can be pricy
         try {

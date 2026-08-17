@@ -96,11 +96,11 @@ public class RenderUtils {
             return null;
 
         return switch (type) {
-            case HelmetPivot -> avatar.luaRuntime.vanilla_model.HELMET;
-            case ChestplatePivot -> avatar.luaRuntime.vanilla_model.CHESTPLATE;
+            case HelmetPivot -> avatar.luaRuntime.vanilla_model.HELMET_HEAD;
+            case ChestplatePivot -> avatar.luaRuntime.vanilla_model.CHESTPLATE_BODY;
             case LeftShoulderPivot -> avatar.luaRuntime.vanilla_model.CHESTPLATE_LEFT_ARM;
             case RightShoulderPivot -> avatar.luaRuntime.vanilla_model.CHESTPLATE_RIGHT_ARM;
-            case LeggingsPivot -> avatar.luaRuntime.vanilla_model.LEGGINGS;
+            case LeggingsPivot -> avatar.luaRuntime.vanilla_model.LEGGINGS_BODY;
             case LeftLeggingPivot -> avatar.luaRuntime.vanilla_model.LEGGINGS_LEFT_LEG;
             case RightLeggingPivot -> avatar.luaRuntime.vanilla_model.LEGGINGS_RIGHT_LEG;
             case LeftBootPivot -> avatar.luaRuntime.vanilla_model.BOOTS_LEFT_LEG;
@@ -146,6 +146,8 @@ public class RenderUtils {
                 lefty && !avatar.luaRuntime.vanilla_model.LEFT_ITEM.checkVisible() ||
                 !lefty && !avatar.luaRuntime.vanilla_model.RIGHT_ITEM.checkVisible()
         )) {
+            avatar.clearPivotPart(lefty ? ParentType.LeftItemPivot : ParentType.RightItemPivot);
+            avatar.clearPivotPart(lefty ? ParentType.LeftSpyglassPivot : ParentType.RightSpyglassPivot);
             ci.cancel();
             return false;
         }

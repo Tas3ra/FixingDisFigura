@@ -161,42 +161,42 @@ public abstract class ElytraLayerMixin<T extends LivingEntity, S extends Humanoi
         }
         Avatar figura$Avatar = figura$avatar;
         if (figura$Avatar != null && figura$Avatar.luaRuntime != null && figura$Avatar.permissions.get(Permissions.VANILLA_MODEL_EDIT) == 1 && figura$Avatar.luaRuntime.vanilla_model.ELYTRA.checkVisible()) {
-            // Try to render the pivot part
             Identifier playerTexture =  RenderUtils.getPlayerSkinTexture((WingsLayer<?, ?>) (Object)this, state);
-
-            VanillaPart part = RenderUtils.pivotToPart(figura$Avatar, ParentType.LeftElytraPivot);
-            if (part != null && part.checkVisible()) {
-                boolean leftWing = figura$Avatar.pivotPartRender(ParentType.LeftElytraPivot, stack -> {
-                        stack.pushPose();
-                        stack.scale(16, 16, 16);
-                        stack.mulPose(Axis.XP.rotationDegrees(180f));
-                        stack.mulPose(Axis.YP.rotationDegrees(180f));
-                        stack.translate(0.0f, 0.0f, 0.125f);
-                        figura$submitElytraPart(elytraModel, state, ((ElytraModelAccessor)elytraModel).getLeftWing(), stack, nodeCollector, light, state.outlineColor, itemStack, playerTexture);
-                        stack.popPose();
-                });
-                if (!leftWing) {
-                    figura$submitElytraPart(elytraModel, state, ((ElytraModelAccessor)elytraModel).getLeftWing(), poseStack, nodeCollector, light, state.outlineColor, itemStack, playerTexture);
-                }
+            figura$submitElytraPivotPart(state, poseStack, nodeCollector, light, elytraModel, ParentType.LeftElytraPivot, ((ElytraModelAccessor)elytraModel).getLeftWing(), itemStack, playerTexture);
+            figura$submitElytraPivotPart(state, poseStack, nodeCollector, light, elytraModel, ParentType.RightElytraPivot, ((ElytraModelAccessor)elytraModel).getRightWing(), itemStack, playerTexture);
+        } else {
+            if (figura$Avatar != null) {
+                figura$Avatar.clearPivotPart(ParentType.LeftElytraPivot);
+                figura$Avatar.clearPivotPart(ParentType.RightElytraPivot);
             }
+            renderedPivot = figura$Avatar != null && figura$Avatar.luaRuntime != null && figura$Avatar.permissions.get(Permissions.VANILLA_MODEL_EDIT) == 1 && !figura$Avatar.luaRuntime.vanilla_model.ELYTRA.checkVisible();
+        }
+    }
 
+    @Unique
+    private void figura$submitElytraPivotPart(S state, PoseStack poseStack, SubmitNodeCollector nodeCollector, int light, ElytraModel elytraModel, ParentType parentType, ModelPart wing, ItemStack itemStack, @Nullable Identifier playerTexture) {
+        Avatar avatar = figura$avatar;
+        if (avatar == null)
+            return;
 
-            part = RenderUtils.pivotToPart(figura$Avatar, ParentType.RightElytraPivot);
-            if (part != null && part.checkVisible()) {
-                boolean rightWing = figura$Avatar.pivotPartRender(ParentType.RightElytraPivot, stack -> {
-                    stack.pushPose();
-                    stack.scale(16, 16, 16);
-                    stack.mulPose(Axis.XP.rotationDegrees(180f));
-                    stack.mulPose(Axis.YP.rotationDegrees(180f));
-                    stack.translate(0.0f, 0.0f, 0.125f);
-                    figura$submitElytraPart(elytraModel, state, ((ElytraModelAccessor)elytraModel).getRightWing(), stack, nodeCollector, light, state.outlineColor, itemStack, playerTexture);
-                    stack.popPose();
-                });
-                if (!rightWing) {
-                    figura$submitElytraPart(elytraModel, state, ((ElytraModelAccessor)elytraModel).getRightWing(), poseStack, nodeCollector, light, state.outlineColor, itemStack, playerTexture);
-                }
-            }
-        } else renderedPivot = figura$Avatar != null && figura$Avatar.luaRuntime != null && figura$Avatar.permissions.get(Permissions.VANILLA_MODEL_EDIT) == 1 && !figura$Avatar.luaRuntime.vanilla_model.ELYTRA.checkVisible();
+        VanillaPart part = RenderUtils.pivotToPart(avatar, parentType);
+        if (part != null && !part.checkVisible()) {
+            avatar.clearPivotPart(parentType);
+            return;
+        }
+
+        boolean renderedWing = avatar.pivotPartRender(parentType, stack -> {
+            stack.pushPose();
+            stack.scale(16, 16, 16);
+            stack.mulPose(Axis.XP.rotationDegrees(180f));
+            stack.mulPose(Axis.YP.rotationDegrees(180f));
+            stack.translate(0.0f, 0.0f, 0.125f);
+            figura$submitElytraPart(elytraModel, state, wing, stack, nodeCollector, light, state.outlineColor, itemStack, playerTexture);
+            stack.popPose();
+        });
+
+        if (!renderedWing)
+            figura$submitElytraPart(elytraModel, state, wing, poseStack, nodeCollector, light, state.outlineColor, itemStack, playerTexture);
     }
 
     // rewritten to work with mojang's shiny new layer system

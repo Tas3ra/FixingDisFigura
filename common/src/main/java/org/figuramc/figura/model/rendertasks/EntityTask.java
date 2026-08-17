@@ -6,10 +6,12 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.debug.DebugScreenEntries;
 import net.minecraft.client.gui.components.debug.DebugScreenEntryStatus;
+import net.minecraft.client.Camera;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
 import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.client.renderer.state.CameraRenderState;
+import net.minecraft.world.level.Level;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.TagParser;
@@ -51,10 +53,18 @@ public class EntityTask extends RenderTask {
         stack.scale(16, 16, 16);
 
         if (entity != null) {
-            assert Minecraft.getInstance().level != null;
-            entity.tickCount = (int) (Minecraft.getInstance().level.getGameTime() - ticksSinceEntity);
-            EntityRenderDispatcher dispatcher = Minecraft.getInstance().getEntityRenderDispatcher();
             Minecraft minecraft = Minecraft.getInstance();
+            Level level = minecraft.level;
+            if (level == null)
+                return;
+
+            Camera camera = minecraft.gameRenderer.getMainCamera();
+            Entity cameraEntity = camera.entity();
+            if (cameraEntity == null)
+                return;
+
+            entity.tickCount = (int) (level.getGameTime() - ticksSinceEntity);
+            EntityRenderDispatcher dispatcher = minecraft.getEntityRenderDispatcher();
             DebugScreenEntryStatus h = minecraft.debugEntries.getStatus(DebugScreenEntries.ENTITY_HITBOXES);
             minecraft.debugEntries.setStatus(DebugScreenEntries.ENTITY_HITBOXES, DebugScreenEntryStatus.NEVER);
             OptionalInt prev = LivingEntityRendererAccessor.overrideOverlay;
@@ -62,11 +72,11 @@ public class EntityTask extends RenderTask {
             float tickDelta = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(true);
             try {
                 CameraRenderState cameraRenderState = new CameraRenderState();
-                cameraRenderState.initialized = minecraft.gameRenderer.getMainCamera().isInitialized();
-                cameraRenderState.pos = minecraft.gameRenderer.getMainCamera().position();
-                cameraRenderState.blockPos = minecraft.gameRenderer.getMainCamera().blockPosition();
-                cameraRenderState.entityPos = minecraft.gameRenderer.getMainCamera().entity().getPosition(tickDelta);
-                cameraRenderState.orientation = new Quaternionf(minecraft.gameRenderer.getMainCamera().rotation());
+                cameraRenderState.initialized = camera.isInitialized();
+                cameraRenderState.pos = camera.position();
+                cameraRenderState.blockPos = camera.blockPosition();
+                cameraRenderState.entityPos = cameraEntity.getPosition(tickDelta);
+                cameraRenderState.orientation = new Quaternionf(camera.rotation());
 
                 EntityRenderState state = dispatcher.extractEntity(entity, tickDelta);
                 state.lightCoords = this.customization.light != null ? this.customization.light : light;
@@ -114,6 +124,10 @@ public class EntityTask extends RenderTask {
     )
     public EntityTask setNbt(String nbtOrId, String nullOrNbt) {
         try {
+            Level level = Minecraft.getInstance().level;
+            if (level == null)
+                throw new LuaError("Cannot create an EntityTask entity without a world");
+
             CompoundTag finalNbt;
             if(nullOrNbt == null) {
                 finalNbt = (TagParser.parseCompoundFully(nbtOrId));
@@ -127,12 +141,11 @@ public class EntityTask extends RenderTask {
                 finalNbt.put("id", StringTag.valueOf(nbtOrId));
             }
 
-            assert Minecraft.getInstance().level != null;
-            entity = EntityType.loadEntityRecursive(finalNbt, Minecraft.getInstance().level, EntitySpawnReason.SPAWN_ITEM_USE, EntityProcessor.NOP);
+            entity = EntityType.loadEntityRecursive(finalNbt, level, EntitySpawnReason.SPAWN_ITEM_USE, EntityProcessor.NOP);
             if (entity == null) {
                 throw new LuaError("Could not create entity");
             }
-            ticksSinceEntity = Minecraft.getInstance().level.getGameTime() - entity.tickCount;
+            ticksSinceEntity = level.getGameTime() - entity.tickCount;
         } catch (CommandSyntaxException e) {
             throw new LuaError(e.getMessage());
         }

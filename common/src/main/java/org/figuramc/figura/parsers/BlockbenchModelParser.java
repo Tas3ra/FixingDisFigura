@@ -2,7 +2,6 @@ package org.figuramc.figura.parsers;
 
 import com.google.gson.*;
 import net.minecraft.nbt.*;
-import org.figuramc.figura.FiguraMod;
 import org.figuramc.figura.math.vector.FiguraVec3;
 import org.figuramc.figura.model.ParentType;
 import org.figuramc.figura.utils.IOUtils;
@@ -40,10 +39,13 @@ public class BlockbenchModelParser {
         // parse json -> object
         BlockbenchModel model = GSON.fromJson(json, BlockbenchModel.class);
 
+        if (model == null || model.meta == null)
+            throw new Exception("Model \"" + modelName + "\" has missing Blockbench metadata");
+
         //meta check
-        if (!model.meta.model_format.equals("free") && !model.meta.model_format.contains(FiguraMod.MOD_ID))
+        if (model.meta.model_format == null || (!model.meta.model_format.equals("free") && !model.meta.model_format.contains(FiguraMod.MOD_ID)))
             throw new Exception("Model \"" + modelName + "\" have an incompatible model format. Compatibility is limited to \"Generic Model\" format and third-party " + FiguraMod.MOD_NAME + " specific formats");
-        int formatVersion = Integer.parseInt(model.meta.format_version.split("\\.")[0]);
+        int formatVersion = getMajorFormatVersion(model.meta.format_version);
         if (formatVersion < 4)
             throw new Exception("Model \"" + modelName + "\" was created using a version too old (" + model.meta.format_version + ") of Blockbench. Minimum compatible version is 4.0");
         modernKeyframeDirections = formatVersion >= 5;
@@ -94,7 +96,30 @@ public class BlockbenchModelParser {
             nbt.putString("pt", parentType.name());
     }
 
+    private static int getMajorFormatVersion(String version) {
+        if (version == null)
+            return 0;
+
+        int end = 0;
+        while (end < version.length() && Character.isDigit(version.charAt(end)))
+            end++;
+
+        if (end == 0)
+            return 0;
+
+        try {
+            return Integer.parseInt(version.substring(0, end));
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
+    }
+
     // -- internal functions -- //
+
+    private static void parseRenderData(CompoundTag nbt, Boolean shade, String shading) {
+        if ((shade != null && !shade) || (shading != null && shading.equalsIgnoreCase("flat")))
+            nbt.putBoolean("smo", false);
+    }
 
     private void parseTextures(Path avatar, Path sourceFile, String folders, String modelName, CompoundTag texturesNbt, BlockbenchModel.Texture[] textures, BlockbenchModel.Resolution resolution) throws Exception {
         if (textures == null)
@@ -244,11 +269,15 @@ public class BlockbenchModelParser {
     }
 
     private void parseElements(BlockbenchModel.Element[] elements) {
+        if (elements == null)
+            return;
+
         for (BlockbenchModel.Element element : elements) {
+            if (element == null || element.uuid == null)
+                continue;
+
             if (element.type == null)
                 element.type = "cube";
-            if (!element.type.equalsIgnoreCase("cube") && !element.type.equalsIgnoreCase("mesh"))
-                continue;
             if (element.export != null && !element.export)
                 continue;
 
@@ -257,7 +286,7 @@ public class BlockbenchModelParser {
             CompoundTag nbt = new CompoundTag();
 
             //parse fields
-            nbt.putString("name", element.name);
+            nbt.putString("name", element.name == null ? id : element.name);
 
             //parse transform data
             if (notZero(element.from))
@@ -272,14 +301,14 @@ public class BlockbenchModelParser {
                 nbt.putFloat("inf", element.inflate);
 
             nbt.putBoolean("vsb", element.visibility == null || element.visibility);
+            parseRenderData(nbt, element.shade, element.shading);
 
             //parse faces
-            CompoundTag data;
             if (element.type.equalsIgnoreCase("cube")) {
-                data = parseCubeFaces(element.faces);
+                CompoundTag data = parseCubeFaces(element.faces);
                 nbt.put("cube_data", data);
-            } else {
-                data = parseMesh(element.faces, element.vertices, element.origin);
+            } else if (element.type.equalsIgnoreCase("mesh")) {
+                CompoundTag data = parseMesh(element.faces, element.vertices, element.origin);
                 nbt.put("mesh_data", data);
             }
 
@@ -300,6 +329,9 @@ public class BlockbenchModelParser {
 
     private CompoundTag parseCubeFaces(JsonObject faces) {
         CompoundTag nbt = new CompoundTag();
+
+        if (faces == null)
+            return nbt;
 
         for (String cubeFace : BlockbenchModel.CubeFace.FACES) {
             if (!faces.has(cubeFace))
@@ -345,6 +377,11 @@ public class BlockbenchModelParser {
     private CompoundTag parseMesh(JsonObject faces, JsonObject vertices, float[] offset) {
         CompoundTag nbt = new CompoundTag();
 
+        if (faces == null || vertices == null)
+            return nbt;
+        if (offset == null)
+            offset = new float[] {0f, 0f, 0f};
+
         //parse vertices first, as the faces will reference it later
         //we are going to save them in a String -> Integer map
         //the map will be preserved since it is very common to meshes share the same vertices,
@@ -354,8 +391,13 @@ public class BlockbenchModelParser {
 
         int index = 0;
         for (Map.Entry<String, JsonElement> entry : vertices.entrySet()) {
-            verticesMap.put(entry.getKey(), index);
+            if (!entry.getValue().isJsonArray())
+                continue;
+
             float[] arr = jsonToFloat(entry.getValue().getAsJsonArray());
+            if (arr.length < 3)
+                continue;
+            verticesMap.put(entry.getKey(), index);
             verticesList.add(FloatTag.valueOf(arr[0] + offset[0]));
             verticesList.add(FloatTag.valueOf(arr[1] + offset[1]));
             verticesList.add(FloatTag.valueOf(arr[2] + offset[2]));
@@ -376,7 +418,16 @@ public class BlockbenchModelParser {
 
             //dont parse empty faces
             //Also skip faces that have less than 3 or more than 4 vertices, since blockbench is jank as hell
-            if (face.texture == null || face.vertices == null || face.uv == null || face.vertices.length < 3 || face.vertices.length > 4)
+            if (face == null || face.texture == null || face.vertices == null || face.uv == null || face.vertices.length < 3 || face.vertices.length > 4)
+                continue;
+            boolean missingVertex = false;
+            for (String vertex : face.vertices) {
+                if (!verticesMap.containsKey(vertex) || !face.uv.has(vertex) || !face.uv.get(vertex).isJsonArray() || face.uv.getAsJsonArray(vertex).size() < 2) {
+                    missingVertex = true;
+                    break;
+                }
+            }
+            if (missingVertex)
                 continue;
 
             //parse texture
@@ -496,13 +547,19 @@ public class BlockbenchModelParser {
 
         int i = 0;
         for (BlockbenchModel.Animation animation : animations) {
+            if (animation == null) {
+                i++;
+                continue;
+            }
+
             CompoundTag animNbt = new CompoundTag();
 
             //animation metadata
             animNbt.putString("mdl", folders.isBlank() ? modelName : folders + modelName);
-            animNbt.putString("name", animation.name);
-            if (!animation.loop.equals("once"))
-                animNbt.putString("loop", animation.loop);
+            animNbt.putString("name", animation.name == null ? "" : animation.name);
+            String loop = animation.loop == null ? "once" : animation.loop;
+            if (!loop.equals("once"))
+                animNbt.putString("loop", loop);
             if (animation.override != null && animation.override)
                 animNbt.putBoolean("ovr", true);
             if (animation.length != 0f)
@@ -540,9 +597,16 @@ public class BlockbenchModelParser {
                 ListTag scaleData = new ListTag();
 
                 //parse keyframes
+                if (!entry.getValue().isJsonObject())
+                    continue;
                 JsonObject animationData = entry.getValue().getAsJsonObject();
+                if (!animationData.has("keyframes") || !animationData.get("keyframes").isJsonArray())
+                    continue;
+
                 for (JsonElement keyframeJson : animationData.get("keyframes").getAsJsonArray()) {
                     BlockbenchModel.KeyFrame keyFrame = GSON.fromJson(keyframeJson, BlockbenchModel.KeyFrame.class);
+                    if (keyFrame == null || keyFrame.channel == null || keyFrame.data_points == null || keyFrame.data_points.isEmpty())
+                        continue;
 
                     CompoundTag keyframeNbt = new CompoundTag();
                     keyframeNbt.putFloat("time", keyFrame.time);
@@ -551,17 +615,24 @@ public class BlockbenchModelParser {
                         if (!keyFrame.channel.equalsIgnoreCase("timeline"))
                             continue;
 
-                        keyframeNbt.putString("src", keyFrame.data_points.get(0).getAsJsonObject().get("script").getAsString());
+                        if (!keyFrame.data_points.get(0).isJsonObject())
+                            continue;
+                        JsonObject dataPoint = keyFrame.data_points.get(0).getAsJsonObject();
+                        if (!dataPoint.has("script"))
+                            continue;
+                        keyframeNbt.putString("src", dataPoint.get("script").getAsString());
                         effectData.add(keyframeNbt);
                     } else {
-                        keyframeNbt.putString("int", keyFrame.interpolation);
+                        keyframeNbt.putString("int", keyFrame.interpolation == null ? "linear" : keyFrame.interpolation);
 
                         //pre
+                        if (!keyFrame.data_points.get(0).isJsonObject())
+                            continue;
                         JsonObject dataPoints = keyFrame.data_points.get(0).getAsJsonObject();
                         keyframeNbt.put("pre", parseKeyFrameData(dataPoints, keyFrame.channel));
 
                         //end
-                        if (keyFrame.data_points.size() > 1) {
+                        if (keyFrame.data_points.size() > 1 && keyFrame.data_points.get(1).isJsonObject()) {
                             JsonObject endDataPoints = keyFrame.data_points.get(1).getAsJsonObject();
                             keyframeNbt.put("end", parseKeyFrameData(endDataPoints, keyFrame.channel));
                         }
@@ -596,7 +667,7 @@ public class BlockbenchModelParser {
 
                     if (!rotData.isEmpty()) {
                         JsonElement globalRotJson = animationData.get("rotation_global");
-                        if (globalRotJson != null && globalRotJson.getAsBoolean())
+                        if (globalRotJson != null && globalRotJson.isJsonPrimitive() && globalRotJson.getAsBoolean())
                             channels.put("grot", rotData);
                         else
                             channels.put("rot", rotData);
@@ -629,9 +700,18 @@ public class BlockbenchModelParser {
         BlockbenchModel.KeyFrameData frameData = GSON.fromJson(object, BlockbenchModel.KeyFrameData.class);
 
         float fallback = channel.equals("scale") ? 1f : 0f;
-        Object x = keyFrameData(frameData.x, fallback, keyframeDirection(channel, 0));
-        Object y = keyFrameData(frameData.y, fallback, keyframeDirection(channel, 1));
-        Object z = keyFrameData(frameData.z, fallback, keyframeDirection(channel, 2));
+        String xData = frameData.x;
+        String yData = frameData.y;
+        String zData = frameData.z;
+        if (frameData.vector != null && frameData.vector.size() >= 3) {
+            xData = keyFrameValue(frameData.vector, 0);
+            yData = keyFrameValue(frameData.vector, 1);
+            zData = keyFrameValue(frameData.vector, 2);
+        }
+
+        Object x = keyFrameData(xData, fallback, keyframeDirection(channel, 0));
+        Object y = keyFrameData(yData, fallback, keyframeDirection(channel, 1));
+        Object z = keyFrameData(zData, fallback, keyframeDirection(channel, 2));
 
         ListTag nbt = new ListTag();
         if (x instanceof Float xx && y instanceof Float yy && z instanceof Float zz) {
@@ -645,6 +725,13 @@ public class BlockbenchModelParser {
         }
 
         return nbt;
+    }
+
+    private static String keyFrameValue(JsonArray vector, int index) {
+        JsonElement element = vector.get(index);
+        if (element == null || element.isJsonNull())
+            return null;
+        return element.isJsonPrimitive() ? element.getAsString() : element.toString();
     }
 
     private float[] parseKeyframeVector(float[] values, String channel) {
@@ -676,6 +763,9 @@ public class BlockbenchModelParser {
             return children;
 
         for (JsonElement element : outliner) {
+            if (element == null || element.isJsonNull())
+                continue;
+
             //check if it is an ID first
             if (element instanceof JsonPrimitive) {
                 String key = element.getAsString();
@@ -690,9 +780,14 @@ public class BlockbenchModelParser {
                 continue;
             }
 
+            if (!element.isJsonObject())
+                continue;
+
             //then parse as GroupElement (outliner)
             CompoundTag groupNbt = new CompoundTag();
             BlockbenchModel.GroupElement outlinerGroup = GSON.fromJson(element, BlockbenchModel.GroupElement.class);
+            if (outlinerGroup == null)
+                continue;
             BlockbenchModel.GroupElement group = groupMap.getOrDefault(outlinerGroup.uuid, outlinerGroup);
             String name = group.name != null ? group.name : outlinerGroup.name;
             if (name == null)
@@ -704,6 +799,7 @@ public class BlockbenchModelParser {
             float[] origin = group.origin != null ? group.origin : outlinerGroup.origin;
             float[] rotation = group.rotation != null ? group.rotation : outlinerGroup.rotation;
             JsonArray groupChildren = outlinerGroup.children != null ? outlinerGroup.children : group.children;
+            Boolean shade = group.shade != null ? group.shade : outlinerGroup.shade;
 
             //skip not exported groups
             if (export != null && !export)
@@ -722,6 +818,7 @@ public class BlockbenchModelParser {
                 groupNbt.put("piv", toNbtList(origin));
             if (notZero(rotation))
                 groupNbt.put("rot", toNbtList(rotation));
+            parseRenderData(groupNbt, shade, null);
 
             //parent type
             parseParent(name, groupNbt);
@@ -795,6 +892,14 @@ public class BlockbenchModelParser {
         try {
             return Float.parseFloat(input);
         } catch (Exception ignored) {
+            if (input == null)
+                return fallback;
+
+            String compact = input.replaceAll("\\s+", "");
+            try {
+                return Float.parseFloat(compact);
+            } catch (Exception ignoredAgain) {}
+
             return fallback;
         }
     }
@@ -809,6 +914,12 @@ public class BlockbenchModelParser {
         } catch (Exception ignored) {
             if (input == null || input.isBlank())
                 return fallback * multiplier;
+
+            String compact = input.replaceAll("\\s+", "");
+            try {
+                return Float.parseFloat(compact) * multiplier;
+            } catch (Exception ignoredAgain) {}
+
             return multiplier == 1f ? input : "-(" + input + ")";
         }
     }
@@ -833,7 +944,7 @@ public class BlockbenchModelParser {
 
         int i = 0;
         for (JsonElement element : array) {
-            f[i] = element.isJsonNull() ? 0f : element.getAsFloat();
+            f[i] = element == null || element.isJsonNull() ? 0f : toFloat(element.getAsString(), 0f);
             i++;
         }
 

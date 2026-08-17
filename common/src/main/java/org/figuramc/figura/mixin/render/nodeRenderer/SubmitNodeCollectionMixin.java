@@ -92,9 +92,11 @@ public class SubmitNodeCollectionMixin implements NodeCollectorExtension {
             itemSubmissionExtension.figura$addPostRenderingCallback(callback);
         }
         itemSubmissionExtension.figura$setPreventAnimSetup(displayContextExtension.figura$getPreventAnimSetup());
-        displayContextExtension.figura$setPreventAnimSetup(false);
-        displayContextExtension.figura$getPreRenderingCallbacks().clear();
-        displayContextExtension.figura$getPostRenderingCallbacks().clear();
+        if (displayContextExtension.figura$consumeCallbacksOnSubmit()) {
+            displayContextExtension.figura$setPreventAnimSetup(false);
+            displayContextExtension.figura$getPreRenderingCallbacks().clear();
+            displayContextExtension.figura$getPostRenderingCallbacks().clear();
+        }
         return original.call(instance, e);
     }
 

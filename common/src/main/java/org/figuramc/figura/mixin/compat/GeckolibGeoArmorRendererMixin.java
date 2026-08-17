@@ -106,8 +106,10 @@ public abstract class GeckolibGeoArmorRendererMixin<T extends Item & GeoItem, R 
         }
 
         VanillaPart vanillaPart = RenderUtils.pivotToPart(avatar, parentType);
-        if (vanillaPart != null && !vanillaPart.checkVisible())
+        if (vanillaPart != null && !vanillaPart.checkVisible()) {
+            avatar.clearPivotPart(parentType);
             return;
+        }
 
         boolean renderedPivot = avatar.pivotPartRender(parentType, pivotStack -> {
             PoseStack poseStack = renderPassInfo.poseStack();

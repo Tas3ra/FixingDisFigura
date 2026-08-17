@@ -41,17 +41,9 @@ public abstract class EntityRendererMixin<T extends Entity, S extends EntityRend
         Avatar figura$avatar = AvatarManager.getAvatar(entityRenderState);
 
         if (figura$avatar != null) {
-            CameraRenderState replacement = new CameraRenderState();
-            replacement.pos = cameraRenderState.pos;
-            replacement.blockPos = cameraRenderState.blockPos;
-            replacement.entityPos = cameraRenderState.entityPos;
-            replacement.initialized = cameraRenderState.initialized;
-            replacement.orientation = cameraRenderState.orientation;
-
-            // i literally cannot believe we have to do this, but here we are
-            ((CameraRenderStateExtension)replacement).figura$setAvatar(figura$avatar);
-            ((CameraRenderStateExtension)replacement).figura$setRenderingNameTag(figura$isRenderingName());
-            return replacement;
+            CameraRenderStateExtension extension = (CameraRenderStateExtension) cameraRenderState;
+            extension.figura$setAvatar(figura$avatar);
+            extension.figura$setRenderingNameTag(figura$isRenderingName());
         }
         return cameraRenderState;
     }

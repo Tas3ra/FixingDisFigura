@@ -423,5 +423,10 @@ public class PartCustomization {
         public boolean isEmpty() {
             return stack.size() == 1;
         }
+
+        public void clear() {
+            while (stack.size() > 1)
+                stack.pop();
+        }
     }
 }

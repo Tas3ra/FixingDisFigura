@@ -25,4 +25,12 @@ public interface FiguraSubmitCallBackExtension {
     default void figura$setPreventAnimSetup(boolean prevent) {
 
     }
+
+    default boolean figura$consumeCallbacksOnSubmit() {
+        return true;
+    }
+
+    default void figura$setConsumeCallbacksOnSubmit(boolean consume) {
+
+    }
 }

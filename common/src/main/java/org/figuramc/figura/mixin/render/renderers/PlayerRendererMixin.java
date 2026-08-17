@@ -197,9 +197,12 @@ public abstract class PlayerRendererMixin extends LivingEntityRenderer<AbstractC
     private void renderNameTag(AvatarRenderState playerRenderState, PoseStack poseStack, SubmitNodeCollector submitNodeCollector, CameraRenderState cameraRenderState, CallbackInfo ci) {
         // return on config or high entity distance
         int config = Configs.ENTITY_NAMEPLATE.value;
+        if (config == 0 || AvatarManager.panic || Minecraft.getInstance().level == null)
+            return;
+
         Entity entity = Minecraft.getInstance().level.getEntity(playerRenderState.id);
 
-        if (config == 0 || AvatarManager.panic || !(entity instanceof Player player) || this.entityRenderDispatcher.distanceToSqr(player) > 4096)
+        if (!(entity instanceof Player player) || this.entityRenderDispatcher.distanceToSqr(player) > 4096)
             return;
 
         // get customizations

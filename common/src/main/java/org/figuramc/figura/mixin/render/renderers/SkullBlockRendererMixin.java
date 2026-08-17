@@ -69,7 +69,7 @@ public abstract class SkullBlockRendererMixin implements BlockEntityRenderer<Sku
         Avatar localAvatar = avatar;
         avatar = null;
 
-        if (localAvatar == null || localAvatar.permissions.get(Permissions.CUSTOM_SKULL) == 0)
+        if (AvatarManager.panic || localAvatar == null || localAvatar.permissions.get(Permissions.CUSTOM_SKULL) == 0)
             return;
 
         if (figura$isUnownedItemRender(localBlock, localItem, localEntity, localMode))
@@ -179,7 +179,7 @@ public abstract class SkullBlockRendererMixin implements BlockEntityRenderer<Sku
     @Inject(at = @At("TAIL"), method = "extractRenderState(Lnet/minecraft/world/level/block/entity/SkullBlockEntity;Lnet/minecraft/client/renderer/blockentity/state/SkullBlockRenderState;FLnet/minecraft/world/phys/Vec3;Lnet/minecraft/client/renderer/feature/ModelFeatureRenderer$CrumblingOverlay;)V")
     public void captureAvatar(SkullBlockEntity skullBlockEntity, SkullBlockRenderState skullBlockRenderState, float tickDelta, Vec3 cameraPos, ModelFeatureRenderer.CrumblingOverlay crumblingOverlay, CallbackInfo ci) {
         Avatar skullAvatar = null;
-        if (skullBlockRenderState.skullType == SkullBlock.Types.PLAYER) {
+        if (!AvatarManager.panic && skullBlockRenderState.skullType == SkullBlock.Types.PLAYER) {
             ResolvableProfile profile = skullBlockEntity.getOwnerProfile();
             skullAvatar = AvatarManager.getAvatarForProfile(profile);
         }
