@@ -12,8 +12,10 @@ import net.minecraft.client.renderer.entity.LivingEntityRenderer;
 import net.minecraft.client.renderer.entity.RenderLayerParent;
 import net.minecraft.client.renderer.entity.layers.RenderLayer;
 import net.minecraft.client.renderer.entity.state.AvatarRenderState;
+import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.client.renderer.entity.state.LivingEntityRenderState;
 import net.minecraft.client.renderer.item.ItemModelResolver;
+import net.minecraft.client.renderer.OutlineBufferSource;
 import net.minecraft.client.renderer.state.CameraRenderState;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -79,11 +81,14 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
     private Matrix4f lastPose;
     @Unique
     private Map<ModelPart, PartPose> figura$layerModelState;
+    @Unique
+    private boolean figura$updatedFirstPersonMatrices;
 
     @Inject(at = @At("HEAD"), method = "submit(Lnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;Lnet/minecraft/client/renderer/state/CameraRenderState;)V")
     private void onRender(S livingEntityRenderState, PoseStack poseStack, SubmitNodeCollector submitNodeCollector, CameraRenderState cameraRenderState, CallbackInfo ci) {
         lastPose = null;
         figura$layerModelState = null;
+        figura$updatedFirstPersonMatrices = false;
         currentAvatar = AvatarManager.getAvatar(livingEntityRenderState);
         if (currentAvatar == null)
             return;
@@ -109,14 +114,13 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
 
         if (Avatar.firstPerson) {
             Avatar localAvatar = currentAvatar;
-            if (localAvatar != null) {
-                model.setupAnim(livingEntityRenderState);
-                localAvatar.updateMatrices(model, poseStack);
-            }
+            if (localAvatar != null && !figura$updatedFirstPersonMatrices)
+                figura$updateFirstPersonMatrices(localAvatar, model, poseStack);
 
             currentAvatar = null;
             lastPose = null;
             figura$layerModelState = null;
+            figura$updatedFirstPersonMatrices = false;
             poseStack.popPose();
             ci.cancel();
             return;
@@ -148,6 +152,14 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
     @Inject(at = @At(value = "INVOKE", target = "Lnet/minecraft/client/model/EntityModel;setupAnim(Ljava/lang/Object;)V", shift = At.Shift.AFTER), method = "submit(Lnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;Lnet/minecraft/client/renderer/state/CameraRenderState;)V", cancellable = true)
     private void submitFiguraModel(S livingEntityRenderState, PoseStack poseStack, SubmitNodeCollector submitNodeCollector, CameraRenderState cameraRenderState, CallbackInfo ci) {
         M model = getModel();
+
+        if (Avatar.firstPerson) {
+            if (currentAvatar != null) {
+                figura$updateFirstPersonMatrices(currentAvatar, model, poseStack);
+                figura$updatedFirstPersonMatrices = true;
+            }
+            return;
+        }
 
         if (currentAvatar == null)
             return;
@@ -189,8 +201,12 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
         Matrix4f diff = new Matrix4f(lastPs).invert().mul(poseStack2.last().pose());
         FiguraMat4 poseMatrix = new FiguraMat4().set(diff);
 
-        FiguraMod.popPushProfiler("renderEvent");
+        FiguraMod.popPushProfiler("prepareRenderEventMatrices");
+        RenderUtils.restoreModelPoseState(model, modelState);
         figura$transformParts(localAvatar, model);
+        localAvatar.updateMatrices(model, poseStack2);
+
+        FiguraMod.popPushProfiler("renderEvent");
         localAvatar.renderEvent(tickDelta, poseMatrix);
 
         FiguraMod.popPushProfiler("prepareLayerMatrices");
@@ -215,7 +231,11 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
 
             figura$transformParts(avatar, model);
 
-            avatar.render(entity, livingEntityState.yRot, tickDelta, translucent ? 0.15f : 1f, poseStack2, bufferSource, livingEntityState.lightCoords, overlay, model, filter, translucent, glowing);
+            boolean outlinePass = bufferSource instanceof OutlineBufferSource && livingEntityState.outlineColor != EntityRenderState.NO_OUTLINE;
+            if (!outlinePass && glowing && !translucent)
+                return null;
+
+            avatar.render(entity, livingEntityState.yRot, tickDelta, outlinePass ? 1f : translucent ? 0.15f : 1f, poseStack2, bufferSource, livingEntityState.lightCoords, overlay, model, filter, translucent && !outlinePass, outlinePass);
 
             FiguraMod.popPushProfiler("postRenderEvent");
             avatar.postRenderEvent(tickDelta, poseMatrix);
@@ -269,6 +289,20 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
                 // this one basically does transformations such as rotation
                 part.preTransform(model);
             }
+        }
+    }
+
+    @Unique
+    void figura$updateFirstPersonMatrices(Avatar currentAvatar, M model, PoseStack poseStack) {
+        Map<ModelPart, PartPose> modelState = RenderUtils.captureModelState(model);
+        try {
+            figura$transformParts(currentAvatar, model);
+            figura$doPosTransform(currentAvatar, model);
+            currentAvatar.updateMatrices(model, poseStack);
+        } finally {
+            if (currentAvatar.luaRuntime != null)
+                currentAvatar.luaRuntime.vanilla_model.PLAYER.restore(model);
+            RenderUtils.restoreModelPoseState(model, modelState);
         }
     }
 

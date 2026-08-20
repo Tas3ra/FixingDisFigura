@@ -71,33 +71,35 @@ public class MathUtils {
     }
 
     public static FiguraVec3 toCameraSpace(FiguraVec3 vec) {
-        Camera camera = Minecraft.getInstance().gameRenderer.getMainCamera();
+        Minecraft minecraft = Minecraft.getInstance();
+        Camera camera = minecraft.gameRenderer.getMainCamera();
+        return toFiguraCameraSpace(vec, minecraft, camera);
+    }
 
-        FiguraMat3 transformMatrix = FiguraMat3.of().set(new Matrix3f().rotation(camera.rotation()));
+    private static Vector3f toMinecraftViewSpace(FiguraVec3 vec, Minecraft minecraft, Camera camera) {
         Vec3 pos = camera.position();
-        transformMatrix.invert();
+        Vector3f relative = new Vector3f((float) (vec.x - pos.x), (float) (vec.y - pos.y), (float) (vec.z - pos.z));
 
-        FiguraVec3 ret = vec.copy();
-        ret.subtract(pos.x, pos.y, pos.z);
-        ret.transform(transformMatrix);
-        ret.multiply(-1, 1, -1); // 1.21 bug causes the z to flip. All other values are normal when comparing to <1.21
+        Matrix4fc figuraViewMatrix = ((GameRendererAccessor) minecraft.gameRenderer).figura$getFiguraViewMatrix();
+        if (figuraViewMatrix != null)
+            return figuraViewMatrix.transformPosition(relative);
 
-        return ret;
+        return relative.rotate(new Quaternionf(camera.rotation()).conjugate());
+    }
+
+    private static FiguraVec3 toFiguraCameraSpace(FiguraVec3 vec, Minecraft minecraft, Camera camera) {
+        Vector3f viewSpace = toMinecraftViewSpace(vec, minecraft, camera);
+        return FiguraVec3.of(-viewSpace.x(), viewSpace.y(), -viewSpace.z());
     }
 
     public static FiguraVec4 worldToScreenSpace(FiguraVec3 worldSpace) {
         Minecraft minecraft = Minecraft.getInstance();
         Camera camera = minecraft.gameRenderer.getMainCamera();
-        Matrix3f transformMatrix = new Matrix3f().rotation(camera.rotation());
-        transformMatrix.scale(-1, 1,-1);
-        transformMatrix.invert();
-
         Vec3 camPos = camera.position();
         FiguraVec3 posDiff = worldSpace.copy().subtract(camPos.x, camPos.y, camPos.z);
-        Vector3f camSpace = posDiff.asVec3f();
-        transformMatrix.transform(camSpace);
+        FiguraVec3 cameraSpace = toFiguraCameraSpace(worldSpace, minecraft, camera);
 
-        Vector4f projectiveCamSpace = new Vector4f(camSpace, 1f);
+        Vector4f projectiveCamSpace = new Vector4f((float) cameraSpace.x, (float) cameraSpace.y, (float) cameraSpace.z, 1f);
         Matrix4f projMat = minecraft.gameRenderer.getProjectionMatrix((float) ((GameRendererAccessor) minecraft.gameRenderer).figura$getFov(camera, minecraft.getDeltaTracker().getGameTimeDeltaPartialTick(false), true));
         projMat.transform(projectiveCamSpace);
         float w = projectiveCamSpace.w();

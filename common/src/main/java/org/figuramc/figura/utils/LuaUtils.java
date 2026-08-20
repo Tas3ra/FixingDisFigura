@@ -304,10 +304,12 @@ public class LuaUtils {
             addLegacyDisplayValue(dest, "Lore", toLegacyTextComponentList(source.get("minecraft:lore")));
         }
         if (!source.get("minecraft:dyed_color").equals(LuaValue.NIL)) {
-            addLegacyDisplayValue(dest, "color", source.get("minecraft:dyed_color"));
+            LuaValue dyedColor = source.get("minecraft:dyed_color");
+            addLegacyDisplayValue(dest, "color", dyedColor instanceof LuaTable dyedTable && !dyedTable.get("rgb").equals(LuaValue.NIL) ? dyedTable.get("rgb") : dyedColor);
         }
         if (!source.get("minecraft:map_color").equals(LuaValue.NIL)) {
-            addLegacyDisplayValue(dest, "MapColor", source.get("minecraft:map_color"));
+            LuaValue mapColor = source.get("minecraft:map_color");
+            addLegacyDisplayValue(dest, "MapColor", mapColor instanceof LuaTable mapTable && !mapTable.get("rgb").equals(LuaValue.NIL) ? mapTable.get("rgb") : mapColor);
         }
         if (!source.get("minecraft:stored_enchantments").equals(LuaValue.NIL)) {
             dest.set("StoredEnchantments", source.get("minecraft:stored_enchantments"));
@@ -489,6 +491,7 @@ public class LuaUtils {
         Iterator<TypedDataComponent<?>> iterator = map.iterator();
 
         // the code is literally disgusting, loops through all components
+        boolean appended = false;
         while (iterator.hasNext()) {
             // uses an iterator to avoid extra ,
 
@@ -501,6 +504,9 @@ public class LuaUtils {
                 continue;
 
             if (optional.isPresent() && resourceLocation != null && !op.isEmpty()) {
+                if (appended) {
+                    builder.append(",");
+                }
                 builder.append(resourceLocation).append("=");
                 // minecraft gets super picky if you give it a resource location so this check has to be added, ew
                 Identifier flag = Identifier.tryParse(op);
@@ -509,9 +515,7 @@ public class LuaUtils {
                 } else {
                     builder.append(op);
                 }
-                if (iterator.hasNext()) {
-                    builder.append(",");
-                }
+                appended = true;
             }
         }
         if (builder.isEmpty())

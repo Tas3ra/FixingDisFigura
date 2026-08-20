@@ -12,6 +12,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
 import org.figuramc.figura.avatar.Avatar;
+import org.figuramc.figura.ducks.GameRendererAccessor;
 import org.figuramc.figura.math.matrix.FiguraMat3;
 import org.figuramc.figura.math.matrix.FiguraMat4;
 import org.figuramc.figura.math.vector.FiguraVec3;
@@ -22,6 +23,8 @@ import org.figuramc.figura.model.rendering.texture.FiguraTexture;
 import org.figuramc.figura.model.rendering.texture.FiguraTextureSet;
 import org.joml.Matrix3f;
 import org.joml.Matrix4d;
+import org.joml.Matrix4f;
+import org.joml.Matrix4fc;
 import org.joml.Quaternionf;
 
 import java.util.ArrayList;
@@ -74,6 +77,7 @@ public abstract class FiguraRenderer {
     protected static int shouldRenderPivots;
     public boolean allowMatrixUpdate = false;
     public boolean allowHiddenTransforms = true;
+    public boolean allowHiddenDescendantRendering = false;
     public boolean interceptRendersIntoFigura = true;
     public boolean allowPivotParts = true;
     public boolean updateLight = false;
@@ -346,6 +350,25 @@ public abstract class FiguraRenderer {
         Camera camera = client.gameRenderer.getMainCamera();
         FiguraMat4 result = FiguraMat4.of();
         Vec3 cameraPos = camera.position().scale(-1);
+        result.translate(cameraPos.x, cameraPos.y, cameraPos.z);
+        return result;
+    }
+
+    /**
+     * Gets a matrix to transform first-person view-space positions back into world space.
+     * First-person hand render poses are camera-local, unlike entity/world poses in 1.21.11.
+     */
+    public static FiguraMat4 viewToWorldMatrix() {
+        Minecraft client = Minecraft.getInstance();
+        Camera camera = client.gameRenderer.getMainCamera();
+        Matrix4fc viewMatrix = ((GameRendererAccessor) client.gameRenderer).figura$getFiguraViewMatrix();
+
+        Matrix4f viewToWorld = viewMatrix != null
+                ? new Matrix4f(viewMatrix).invert()
+                : new Matrix4f().rotation(camera.rotation());
+
+        FiguraMat4 result = FiguraMat4.of().set(viewToWorld);
+        Vec3 cameraPos = camera.position();
         result.translate(cameraPos.x, cameraPos.y, cameraPos.z);
         return result;
     }

@@ -32,6 +32,7 @@ import org.figuramc.figura.utils.EntityUtils;
 import org.figuramc.figura.utils.RenderUtils;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
+import org.joml.Matrix4fc;
 import org.joml.Vector3f;
 import org.joml.Quaternionfc;
 import org.spongepowered.asm.mixin.*;
@@ -73,6 +74,10 @@ public abstract class GameRendererMixin implements GameRendererAccessor {
     private boolean avatarPostShader = false;
     @Unique
     private boolean hasShaders;
+    @Unique
+    private final Matrix4f figura$viewMatrix = new Matrix4f();
+    @Unique
+    private boolean figura$hasFiguraViewMatrix;
 
     @WrapOperation(method = "renderLevel",
             at = @At(value = "INVOKE",
@@ -80,8 +85,9 @@ public abstract class GameRendererMixin implements GameRendererAccessor {
     private Matrix4f onCameraRotation(Matrix4f instance, Quaternionfc quat, Operation<Matrix4f> original) {
         Avatar avatar = AvatarManager.getAvatar(this.minecraft.getCameraEntity() == null ? this.minecraft.player : this.minecraft.getCameraEntity());
         if (!RenderUtils.vanillaModelAndScript(avatar)) {
-            original.call(instance, quat);
-            return instance;
+            Matrix4f result = original.call(instance, quat);
+            figura$hasFiguraViewMatrix = false;
+            return result;
         }
 
         float z = 0f;
@@ -128,9 +134,11 @@ public abstract class GameRendererMixin implements GameRendererAccessor {
         }
 
        // FiguraMat3 normal = avatar.luaRuntime.renderer.cameraNormal;
-      //  if (normal != null)
+        //  if (normal != null)
       //      stack.last().normal().set(normal.toMatrix3f());
         instance.rotate(quat);
+        figura$viewMatrix.set(instance);
+        figura$hasFiguraViewMatrix = true;
         return instance;
     }
 
@@ -260,5 +268,10 @@ public abstract class GameRendererMixin implements GameRendererAccessor {
     @Override
     public GuiRenderer figura$getGuiRenderer() {
         return guiRenderer;
+    }
+
+    @Override
+    public Matrix4fc figura$getFiguraViewMatrix() {
+        return figura$hasFiguraViewMatrix ? figura$viewMatrix : null;
     }
 }

@@ -8,5 +8,9 @@ public enum EntityRenderMode {
     FIRST_PERSON_WORLD,
     RENDER,
     WORLD,
-    OTHER
+    OTHER;
+
+    public String luaName() {
+        return this == FIRST_PERSON_WORLD ? FIRST_PERSON.name() : name();
+    }
 }

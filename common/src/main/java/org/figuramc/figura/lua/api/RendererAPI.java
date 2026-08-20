@@ -558,10 +558,7 @@ public class RendererAPI {
             return this;
         }
 
-        fireLayer1 = LuaUtils.parsePath(id);
-        if (fireLayer1.getPath().startsWith("textures/"))
-            fireLayer1 = new Identifier(fireLayer1.getNamespace(), fireLayer1.getPath().substring("textures/".length()));
-
+        fireLayer1 = parseFireTexture(id);
         return this;
     }
 
@@ -580,11 +577,22 @@ public class RendererAPI {
             return this;
         }
 
-        fireLayer2 = LuaUtils.parsePath(id);
-        if (fireLayer2.getPath().startsWith("textures/"))
-            fireLayer2 = new Identifier(fireLayer2.getNamespace(), fireLayer2.getPath().substring("textures/".length()));
-
+        fireLayer2 = parseFireTexture(id);
         return this;
+    }
+
+    private static Identifier parseFireTexture(String id) {
+        Identifier texture = LuaUtils.parsePath(id);
+        String path = texture.getPath();
+
+        if (path.startsWith("textures/"))
+            path = path.substring("textures/".length());
+        if (path.endsWith(".png"))
+            path = path.substring(0, path.length() - ".png".length());
+        if (!path.contains("/"))
+            path = "block/" + path;
+
+        return new Identifier(texture.getNamespace(), path);
     }
 
     @LuaWhitelist

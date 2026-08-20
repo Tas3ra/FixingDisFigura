@@ -52,18 +52,20 @@ public abstract class ArrowRendererMixin<T extends AbstractArrow, S extends Arro
             FiguraMod.pushProfiler(avatar);
             FiguraMod.pushProfiler("arrowRender");
 
-            FiguraMod.pushProfiler("event");
-            boolean bool = avatar.arrowRenderEvent(tickDelta, EntityAPI.wrap(arrow));
+            try {
+                FiguraMod.pushProfiler("event");
+                boolean bool = avatar.arrowRenderEvent(tickDelta, EntityAPI.wrap(arrow));
 
-            FiguraMod.popPushProfiler("render");
-            if (bool || avatar.renderArrow(poseStack, multiBufferSource, tickDelta, arrowRenderState.lightCoords)) {
-                poseStack.popPose();
-                // this will skip the original render call
-                return false;
+                FiguraMod.popPushProfiler("render");
+                if (bool || avatar.renderArrow(poseStack, multiBufferSource, tickDelta, arrowRenderState.lightCoords)) {
+                    // this will skip the original render call
+                    return false;
+                }
+
+                return true;
+            } finally {
+                FiguraMod.popProfiler(4);
             }
-
-            FiguraMod.popProfiler(4);
-            return true;
         } );
         return par1;
 

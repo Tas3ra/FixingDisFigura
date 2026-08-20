@@ -36,6 +36,7 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
     protected final PartCustomization.PartCustomizationStack customizationStack = new PartCustomization.PartCustomizationStack();
 
     public static final FiguraMat4 CAMERA_POS_TO_WORLD_MATRIX = FiguraMat4.of();
+    public static final FiguraMat4 CAMERA_VIEW_TO_WORLD_MATRIX = FiguraMat4.of();
 
     protected static final VertexBuffer VERTEX_BUFFER = new VertexBuffer();
 
@@ -82,6 +83,7 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
 
             // world matrices
             CAMERA_POS_TO_WORLD_MATRIX.set(FiguraRenderer.worldToCameraPosMatrix().invert());
+            CAMERA_VIEW_TO_WORLD_MATRIX.set(FiguraRenderer.viewToWorldMatrix());
 
             // calculate each part matrices
             calculatePartMatrices(root, currentFilterScheme.initialValue);
@@ -158,6 +160,7 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
             // world matrices
             if (allowMatrixUpdate) {
                 CAMERA_POS_TO_WORLD_MATRIX.set(FiguraRenderer.worldToCameraPosMatrix().invert());
+                CAMERA_VIEW_TO_WORLD_MATRIX.set(FiguraRenderer.viewToWorldMatrix());
             }
 
             // complexity
@@ -260,6 +263,10 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
     }
 
     protected boolean renderPart(FiguraModelPart part, int[] remainingComplexity, boolean prevPredicate) {
+        return renderPart(part, remainingComplexity, prevPredicate, true);
+    }
+
+    protected boolean renderPart(FiguraModelPart part, int[] remainingComplexity, boolean prevPredicate, boolean ancestorsVisible) {
         FiguraMod.pushProfiler(part.name);
 
         PartCustomization custom = part.customization;
@@ -267,7 +274,8 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
         // test the current filter scheme
         FiguraMod.pushProfiler("predicate");
         Boolean thisPassedPredicate = currentFilterScheme.test(part.parentType, prevPredicate);
-        if (thisPassedPredicate == null || (!custom.visible)) {
+        boolean hidden = !custom.visible;
+        if (thisPassedPredicate == null || (hidden && !allowHiddenTransforms)) {
             if (part.parentType.isRenderLayer)
                 part.savedCustomization = customizationStack.peek();
             FiguraMod.popProfiler(2);
@@ -283,17 +291,21 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
 
         // visibility
         FiguraMod.popPushProfiler("checkVanillaVisible");
-        if (!ignoreVanillaVisibility && custom.vanillaVisible != null && !custom.vanillaVisible) {
+        boolean vanillaHidden = !ignoreVanillaVisibility && custom.vanillaVisible != null && !custom.vanillaVisible;
+        if (vanillaHidden && !allowHiddenTransforms) {
             FiguraMod.popPushProfiler("removeVanillaTransforms");
             part.resetVanillaTransforms();
             FiguraMod.popProfiler(2);
             return true;
         }
 
+        boolean renderThisPart = ancestorsVisible && !hidden && !vanillaHidden && thisPassedPredicate;
+        boolean renderChildren = ancestorsVisible && ((!hidden && !vanillaHidden) || allowHiddenDescendantRendering);
+
         // pre render function
-        if (part.preRender != null) {
+        if (renderThisPart && part.preRender != null) {
             FiguraMod.popPushProfiler("preRenderFunction");
-            avatar.run(part.preRender, avatar.render, tickDelta, avatar.renderMode.name(), part);
+            avatar.run(part.preRender, avatar.render, tickDelta, avatar.renderMode.luaName(), part);
         }
 
         // recalculate stuff
@@ -336,7 +348,10 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
             // recalculate light
             FiguraMod.popPushProfiler("calculateLight");
             Level l;
-            if (custom.light != null) {
+            if (!renderThisPart) {
+                updateLight = false;
+            }
+            else if (custom.light != null) {
                 updateLight = false;
             }
             else if (updateLight && (l = Minecraft.getInstance().level) != null) {
@@ -348,18 +363,18 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
         }
 
         // mid render function
-        if (part.midRender != null) {
+        if (renderThisPart && part.midRender != null) {
             FiguraMod.popPushProfiler("midRenderFunction");
-            avatar.run(part.midRender, avatar.render, tickDelta, avatar.renderMode.name(), part);
+            avatar.run(part.midRender, avatar.render, tickDelta, avatar.renderMode.luaName(), part);
         }
 
         // render this
         FiguraMod.popPushProfiler("pushVertices");
-        boolean breakRender = thisPassedPredicate && !part.pushVerticesImmediate(this, remainingComplexity);
+        boolean breakRender = renderThisPart && !part.pushVerticesImmediate(this, remainingComplexity);
 
         // render extras
         FiguraMod.popPushProfiler("extras");
-        if (!breakRender && thisPassedPredicate) {
+        if (!breakRender && renderThisPart) {
             boolean renderPivot = shouldRenderPivots > 0;
             boolean renderTasks = !part.renderTasks.isEmpty();
             boolean renderPivotParts = part.parentType.isPivot && allowPivotParts;
@@ -426,7 +441,7 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
         // render children
         FiguraMod.popPushProfiler("children");
         for (FiguraModelPart child : List.copyOf(part.children)) {
-            if (!renderPart(child, remainingComplexity, thisPassedPredicate)) {
+            if (!renderPart(child, remainingComplexity, thisPassedPredicate, renderChildren)) {
                 breakRender = true;
                 break;
             }
@@ -437,9 +452,9 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
         part.resetVanillaTransforms();
 
         // post render function
-        if (part.postRender != null) {
+        if (renderThisPart && part.postRender != null) {
             FiguraMod.popPushProfiler("postRenderFunction");
-            avatar.run(part.postRender, avatar.render, tickDelta, avatar.renderMode.name(), part);
+            avatar.run(part.postRender, avatar.render, tickDelta, avatar.renderMode.luaName(), part);
         }
 
         // pop
@@ -599,9 +614,10 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
 
     protected FiguraMat4 partToWorldMatrices(PartCustomization cust) {
         FiguraMat4 customizePeek = customizationStack.peek().positionMatrix.copy();
-        // Translate by the inverse matrix of the camera position, as of 1.20.5 it is no longer dependent on camera rot.
-        customizePeek.multiply(CAMERA_POS_TO_WORLD_MATRIX);
-        FiguraVec3 piv = cust.getPivot();
+        // Entity/world poses are camera-position-relative in 1.21.11, while first-person
+        // hand poses are camera/view-space and need the full camera orientation restored.
+        customizePeek.multiply(avatar.renderMode == EntityRenderMode.FIRST_PERSON ? CAMERA_VIEW_TO_WORLD_MATRIX : CAMERA_POS_TO_WORLD_MATRIX);
+        FiguraVec3 piv = cust.getPivot().add(cust.getOffsetPivot());
 
         FiguraMat4 translation = FiguraMat4.of();
         translation.translate(piv);
@@ -618,7 +634,7 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
         // Store old visibility, but overwrite it in case we only want to render certain parts
         FiguraMod.pushProfiler("predicate");
         Boolean thisPassedPredicate = currentFilterScheme.test(part.parentType, prevPredicate);
-        if (thisPassedPredicate == null || !custom.visible) {
+        if (thisPassedPredicate == null || (!custom.visible && !allowHiddenTransforms)) {
             FiguraMod.popProfiler(2);
             return;
         }
@@ -631,7 +647,7 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
         part.applyExtraTransforms(customizationStack.peek());
 
         FiguraMod.popPushProfiler("checkVanillaVisible");
-        if (!ignoreVanillaVisibility && custom.vanillaVisible != null && !custom.vanillaVisible) {
+        if (!ignoreVanillaVisibility && custom.vanillaVisible != null && !custom.vanillaVisible && !allowHiddenTransforms) {
             FiguraMod.popPushProfiler("removeVanillaTransforms");
             part.resetVanillaTransforms();
             FiguraMod.popProfiler(2);
@@ -685,7 +701,7 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
 
         FiguraMod.pushProfiler("predicate");
         Boolean thisPassedPredicate = PartFilterScheme.PIVOTS.test(part.parentType, prevPredicate);
-        if (thisPassedPredicate == null || !custom.visible) {
+        if (thisPassedPredicate == null || (!custom.visible && !allowHiddenTransforms)) {
             FiguraMod.popProfiler(2);
             return;
         }
@@ -693,6 +709,14 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
         FiguraMod.popPushProfiler("copyVanillaPart");
         part.applyVanillaTransforms(vanillaModelData);
         part.applyExtraTransforms(customizationStack.peek());
+
+        FiguraMod.popPushProfiler("checkVanillaVisible");
+        if (!ignoreVanillaVisibility && custom.vanillaVisible != null && !custom.vanillaVisible && !allowHiddenTransforms) {
+            FiguraMod.popPushProfiler("removeVanillaTransforms");
+            part.resetVanillaTransforms();
+            FiguraMod.popProfiler(2);
+            return;
+        }
 
         FiguraMod.popPushProfiler("calculatePartMatrices");
         custom.recalculate();
@@ -762,13 +786,15 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
         ret.primary = primary;
 
         // get render type
+        if (glowing) {
+            if (id != null)
+                ret.renderType = RenderTypes.outline(id);
+            return ret;
+        }
+
         if (id != null) {
             if (translucent) {
                 ret.renderType = RenderTypes.itemEntityTranslucentCull(id);
-                return ret;
-            }
-            if (glowing) {
-                ret.renderType = RenderTypes.outline(id);
                 return ret;
             }
         }

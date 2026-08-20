@@ -30,6 +30,7 @@ public abstract class RenderTask {
     protected final Avatar owner;
     protected final FiguraModelPart parent;
     protected final PartCustomization customization;
+    private boolean removed;
 
     public RenderTask(String name, Avatar owner, FiguraModelPart parent) {
         this.name = name;
@@ -37,6 +38,18 @@ public abstract class RenderTask {
         this.parent = parent;
         this.customization = new PartCustomization();
         this.customization.visible = true;
+    }
+
+    public void figura$markAdded() {
+        this.removed = false;
+    }
+
+    public void figura$markRemoved() {
+        this.removed = true;
+    }
+
+    public boolean figura$isRemoved() {
+        return removed;
     }
 
     public void render(PartCustomization.PartCustomizationStack stack, MultiBufferSource buffer, int light, int overlay) {
@@ -54,7 +67,7 @@ public abstract class RenderTask {
     public abstract void render(PoseStack stack, MultiBufferSource buffer, int light, int overlay);
     public abstract int getComplexity();
     public boolean shouldRender() {
-        return customization.visible;
+        return !removed && customization.visible;
     }
 
 
@@ -64,7 +77,8 @@ public abstract class RenderTask {
     @LuaWhitelist
     @LuaMethodDoc("render_task.remove")
     public RenderTask remove() {
-        this.parent.removeTask(this);
+        if (!removed)
+            this.parent.removeTask(this);
         return this;
     }
 

@@ -15,6 +15,7 @@ import net.minecraft.client.model.player.PlayerModel;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.OutlineBufferSource;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.entity.state.AvatarRenderState;
 import net.minecraft.client.renderer.entity.state.EntityRenderState;
@@ -240,7 +241,7 @@ public class Avatar {
                     }
                 }
                 fileSize = getFileSize();
-                versionStatus = getVersionStatus();
+                versionStatus = getVersionStatus(metadata.getBooleanOr("targetVerExplicit", false));
                 if (entityName.isBlank())
                     entityName = name;
 
@@ -399,12 +400,12 @@ public class Avatar {
 
     public void renderEvent(float delta, FiguraMat4 poseMatrix) {
         if (loaded && luaRuntime != null && luaRuntime.getUser() != null)
-            run("RENDER", render, delta, renderMode.name(), poseMatrix);
+            run("RENDER", render, delta, renderMode.luaName(), poseMatrix);
     }
 
     public void postRenderEvent(float delta, FiguraMat4 poseMatrix) {
         if (loaded && luaRuntime != null && luaRuntime.getUser() != null)
-            run("POST_RENDER", render.post(), delta, renderMode.name(), poseMatrix);
+            run("POST_RENDER", render.post(), delta, renderMode.luaName(), poseMatrix);
         renderMode = EntityRenderMode.OTHER;
     }
 
@@ -455,44 +456,50 @@ public class Avatar {
     }
 
     public boolean itemRenderEvent(ItemStackAPI item, String mode, FiguraVec3 pos, FiguraVec3 rot, FiguraVec3 scale, boolean leftHanded, PoseStack stack, SubmitNodeCollector nodeCollector, int light, int overlay, boolean itemSubmitOwned, FiguraSubmitCallBackExtension submitCallbacks) {
-        if (!loaded || renderer == null || !renderer.interceptRendersIntoFigura) {
-            return false;
-        }
-        Varargs result = run("ITEM_RENDER", render, item, mode, pos, rot, scale, leftHanded);
-
-        if(result == null)
-            return false;
-        PoseStack copy = new PoseStack();
-        copy.pushPose();
-        copy.last().set(stack.last());
-
-        boolean rendered = false;
-        List<FiguraModelPart> parts = new ArrayList<>();
-        for (int i = 1; i <= result.narg(); i++) {
-            if (result.arg(i).isuserdata(FiguraModelPart.class)) {
-                FiguraModelPart modelPart = (FiguraModelPart) result.arg(i).checkuserdata(FiguraModelPart.class);
-
-                boolean renderedPart = figuraItemRendered(modelPart);
-                rendered |= renderedPart;
-                if (renderedPart)
-                    parts.add(modelPart);
+        renderStateLock.lock();
+        try {
+            FiguraRenderer renderer = this.renderer;
+            if (!loaded || renderer == null || !renderer.interceptRendersIntoFigura) {
+                return false;
             }
+            Varargs result = run("ITEM_RENDER", render, item, mode, pos, rot, scale, leftHanded);
 
+            if(result == null)
+                return false;
+            PoseStack copy = new PoseStack();
+            copy.pushPose();
+            copy.last().set(stack.last());
+
+            boolean rendered = false;
+            List<FiguraModelPart> parts = new ArrayList<>();
+            for (int i = 1; i <= result.narg(); i++) {
+                if (result.arg(i).isuserdata(FiguraModelPart.class)) {
+                    FiguraModelPart modelPart = (FiguraModelPart) result.arg(i).checkuserdata(FiguraModelPart.class);
+
+                    boolean renderedPart = figuraItemRendered(renderer, modelPart);
+                    rendered |= renderedPart;
+                    if (renderedPart)
+                        parts.add(modelPart);
+                }
+
+            }
+            if (!rendered)
+                return false;
+
+            if (itemSubmitOwned && queueItemRenderOnSubmit(mode, copy, parts, light, overlay, submitCallbacks))
+                return true;
+
+            NodeCollectorExtension extension = (NodeCollectorExtension) nodeCollector;
+            for (FiguraModelPart modelPart : parts) {
+                extension.submitFiguraModel(this, null, (avatar, entity, bufferSource) -> {
+                    renderItem(copy, bufferSource, modelPart, light, overlay);
+                    return null;
+                });
+            }
+            return rendered;
+        } finally {
+            renderStateLock.unlock();
         }
-        if (!rendered)
-            return false;
-
-        if (itemSubmitOwned && queueItemRenderOnSubmit(mode, copy, parts, light, overlay, submitCallbacks))
-            return true;
-
-        NodeCollectorExtension extension = (NodeCollectorExtension) nodeCollector;
-        for (FiguraModelPart modelPart : parts) {
-            extension.submitFiguraModel(this, null, (avatar, entity, bufferSource) -> {
-                renderItem(copy, bufferSource, modelPart, light, overlay);
-                return null;
-            });
-        }
-        return rendered;
     }
 
     private boolean queueItemRenderOnSubmit(String mode, PoseStack stack, List<FiguraModelPart> parts, int light, int overlay, FiguraSubmitCallBackExtension submitCallbacks) {
@@ -606,20 +613,37 @@ public class Avatar {
     }
 
     public void render(Entity entity, float yaw, float delta, float alpha, PoseStack stack, MultiBufferSource bufferSource, int light, int overlay, EntityModel<?> entityModel, PartFilterScheme filter, boolean translucent, boolean glowing) {
-        if (renderer == null || !loaded)
-            return;
+        renderStateLock.lock();
+        try {
+            FiguraRenderer renderer = this.renderer;
+            if (renderer == null || !loaded)
+                return;
 
-        renderer.vanillaModelData.update(entityModel);
-        renderer.yaw = yaw;
-        renderer.entity = entity;
+            boolean previousAllowMatrixUpdate = renderer.allowMatrixUpdate;
+            boolean previousUpdateLight = renderer.updateLight;
+            boolean updateRenderMatrices = renderMode != EntityRenderMode.FIRST_PERSON;
 
-        renderer.setupRenderer(
-                filter, bufferSource, stack,
-                delta, light, alpha, overlay,
-                translucent, glowing
-        );
+            try {
+                renderer.allowMatrixUpdate = previousAllowMatrixUpdate || updateRenderMatrices;
+                renderer.updateLight = previousUpdateLight || updateRenderMatrices;
+                renderer.vanillaModelData.update(entityModel);
+                renderer.yaw = yaw;
+                renderer.entity = entity;
 
-        render();
+                renderer.setupRenderer(
+                        filter, bufferSource, stack,
+                        delta, light, alpha, overlay,
+                        translucent, glowing
+                );
+
+                render();
+            } finally {
+                renderer.allowMatrixUpdate = previousAllowMatrixUpdate;
+                renderer.updateLight = previousUpdateLight;
+            }
+        } finally {
+            renderStateLock.unlock();
+        }
     }
 
     public void worldRender(Entity entity, double camX, double camY, double camZ, PoseStack stack, MultiBufferSource bufferSource, int lightFallback, float tickDelta, EntityRenderMode mode) {
@@ -632,18 +656,17 @@ public class Avatar {
             boolean prevAllowMatrixUpdate = renderer.allowMatrixUpdate;
             boolean prevUpdateLight = renderer.updateLight;
             renderMode = mode;
-            boolean update = prevRenderMode != EntityRenderMode.OTHER || renderMode == EntityRenderMode.FIRST_PERSON_WORLD;
 
             try {
                 renderer.clearPivotCustomizations();
-                renderer.allowMatrixUpdate = update;
-                renderer.updateLight = update;
+                renderer.allowMatrixUpdate = true;
+                renderer.updateLight = true;
                 renderer.entity = entity;
 
                 renderer.setupRenderer(
                         PartFilterScheme.WORLD, bufferSource, stack,
                         tickDelta, lightFallback, 1f, OverlayTexture.NO_OVERLAY,
-                        false, false,
+                        false, bufferSource instanceof OutlineBufferSource,
                         camX, camY, camZ
                 );
 
@@ -672,7 +695,7 @@ public class Avatar {
         renderer.setupRenderer(
                 PartFilterScheme.CAPE, bufferSource, stack,
                 tickDelta, light, 1f, OverlayTexture.NO_OVERLAY,
-                renderer.translucent, renderer.glowing
+                renderer.translucent && !(bufferSource instanceof OutlineBufferSource), renderer.glowing || bufferSource instanceof OutlineBufferSource
         );
 
         render();
@@ -693,7 +716,7 @@ public class Avatar {
         renderer.setupRenderer(
                 PartFilterScheme.LEFT_ELYTRA, bufferSource, stack,
                 tickDelta, light, 1f, OverlayTexture.NO_OVERLAY,
-                renderer.translucent, renderer.glowing
+                renderer.translucent && !(bufferSource instanceof OutlineBufferSource), renderer.glowing || bufferSource instanceof OutlineBufferSource
         );
 
         // left
@@ -739,14 +762,22 @@ public class Avatar {
 
         PartFilterScheme filter = lefty ? PartFilterScheme.LEFT_ARM : PartFilterScheme.RIGHT_ARM;
         boolean config = Configs.ALLOW_FP_HANDS.value;
+        boolean forcedArmRender = luaRuntime != null && Boolean.TRUE.equals(lefty ? luaRuntime.renderer.renderLeftArm : luaRuntime.renderer.renderRightArm);
+        boolean renderThroughHiddenArmParents = config || forcedArmRender;
         boolean previousAllowHiddenTransforms = renderer.allowHiddenTransforms;
+        boolean previousAllowHiddenDescendantRendering = renderer.allowHiddenDescendantRendering;
         boolean previousAllowMatrixUpdate = renderer.allowMatrixUpdate;
         boolean previousIgnoreVanillaVisibility = renderer.ignoreVanillaVisibility;
+        EntityRenderMode previousRenderMode = renderMode;
 
         stack.pushPose();
         try {
-            renderer.allowHiddenTransforms = config;
-            renderer.allowMatrixUpdate = false;
+            renderMode = EntityRenderMode.FIRST_PERSON;
+            renderer.allowHiddenTransforms = renderThroughHiddenArmParents;
+            renderer.allowHiddenDescendantRendering = renderThroughHiddenArmParents;
+            // FIRST_PERSON is the only pass with the viewmodel hand transform, so keep
+            // partToWorldMatrix accurate for scripts that read muzzle/hand markers here.
+            renderer.allowMatrixUpdate = true;
             renderer.ignoreVanillaVisibility = true;
 
             if (!config) {
@@ -758,8 +789,10 @@ public class Avatar {
         } finally {
             stack.popPose();
             renderer.allowHiddenTransforms = previousAllowHiddenTransforms;
+            renderer.allowHiddenDescendantRendering = previousAllowHiddenDescendantRendering;
             renderer.allowMatrixUpdate = previousAllowMatrixUpdate;
             renderer.ignoreVanillaVisibility = previousIgnoreVanillaVisibility;
+            renderMode = previousRenderMode;
         }
 
         FiguraMod.popProfiler(4);
@@ -843,7 +876,7 @@ public class Avatar {
                 renderer.setupRenderer(
                         PartFilterScheme.SKULL, bufferSource, stack,
                         1f, light, 1f, OverlayTexture.NO_OVERLAY,
-                        false, false
+                        false, bufferSource instanceof OutlineBufferSource
                 );
 
                 int comp = renderer.renderSpecialParts();
@@ -876,7 +909,7 @@ public class Avatar {
             renderer.setupRenderer(
                     PartFilterScheme.HEAD, bufferSource, stack,
                     1f, light, 1f, OverlayTexture.NO_OVERLAY,
-                    false, false
+                    false, bufferSource instanceof OutlineBufferSource
             );
 
             renderer.allowHiddenTransforms = false;
@@ -993,7 +1026,7 @@ public class Avatar {
         renderer.setupRenderer(
                 PartFilterScheme.ARROW, bufferSource, stack,
                 delta, light, 1f, OverlayTexture.NO_OVERLAY,
-                false, false
+                false, bufferSource instanceof OutlineBufferSource
         );
 
         int comp = renderer.renderSpecialParts();
@@ -1015,7 +1048,7 @@ public class Avatar {
         renderer.setupRenderer(
                 PartFilterScheme.TRIDENT, bufferSource, stack,
                 delta, light, 1f, OverlayTexture.NO_OVERLAY,
-                false, false
+                false, bufferSource instanceof OutlineBufferSource
         );
 
         int comp = renderer.renderSpecialParts();
@@ -1025,37 +1058,56 @@ public class Avatar {
     }
 
     public boolean isItemPart(FiguraModelPart modelPart) {
-        return renderer != null && loaded && modelPart.parentType == ParentType.Item;
+        return isItemPart(this.renderer, modelPart);
+    }
+
+    private boolean isItemPart(FiguraRenderer renderer, FiguraModelPart modelPart) {
+        return renderer != null && loaded && modelPart != null && modelPart.parentType == ParentType.Item;
     }
 
     public boolean renderItem(PoseStack stack, MultiBufferSource bufferSource, FiguraModelPart part, int light, int overlay) {
-        if (!isItemPart(part))
-            return false;
-
-        stack.pushPose();
-        FiguraModelPart previousItemToRender = renderer.itemToRender;
-
+        renderStateLock.lock();
         try {
-            stack.mulPose(Axis.ZP.rotationDegrees(180f));
+            FiguraRenderer renderer = this.renderer;
+            if (!isItemPart(renderer, part))
+                return false;
 
-            renderer.setupRenderer(
-                    PartFilterScheme.ITEM, bufferSource, stack,
-                    1f, light, 1f, overlay,
-                    false, false
-            );
+            stack.pushPose();
+            FiguraModelPart previousItemToRender = renderer.itemToRender;
 
-            renderer.itemToRender = part;
+            try {
+                stack.mulPose(Axis.ZP.rotationDegrees(180f));
 
-            int ret = renderer.renderSpecialParts();
-            return ret > 0;
+                renderer.setupRenderer(
+                        PartFilterScheme.ITEM, bufferSource, stack,
+                        1f, light, 1f, overlay,
+                        false, bufferSource instanceof OutlineBufferSource
+                );
+
+                renderer.itemToRender = part;
+
+                int ret = renderer.renderSpecialParts();
+                return ret > 0;
+            } finally {
+                renderer.itemToRender = previousItemToRender;
+                stack.popPose();
+            }
         } finally {
-            renderer.itemToRender = previousItemToRender;
-            stack.popPose();
+            renderStateLock.unlock();
         }
     }
 
     public boolean figuraItemRendered(FiguraModelPart part) {
-        if (!isItemPart(part))
+        renderStateLock.lock();
+        try {
+            return figuraItemRendered(this.renderer, part);
+        } finally {
+            renderStateLock.unlock();
+        }
+    }
+
+    private boolean figuraItemRendered(FiguraRenderer renderer, FiguraModelPart part) {
+        if (!isItemPart(renderer, part))
             return false;
         // save current filter scheme, set it to item, get complexity, and then set it back
         PartFilterScheme partFilterScheme = renderer.currentFilterScheme;
@@ -1072,73 +1124,98 @@ public class Avatar {
     }
 
     public boolean hasPivotPart(ParentType parent) {
-        if (renderer == null || !loaded || !parent.isPivot)
-            return false;
+        renderStateLock.lock();
+        try {
+            FiguraRenderer renderer = this.renderer;
+            if (renderer == null || !loaded || parent == null || !parent.isPivot)
+                return false;
 
-        Queue<PivotCustomization> queue = renderer.getPivotCustomizationQueue(parent);
-        return queue != null && !queue.isEmpty();
+            Queue<PivotCustomization> queue = renderer.getPivotCustomizationQueue(parent);
+            return queue != null && !queue.isEmpty();
+        } finally {
+            renderStateLock.unlock();
+        }
     }
 
     public boolean pivotPartRender(ParentType parent, Consumer<PoseStack> consumer) {
-        if (renderer == null || !loaded || !parent.isPivot)
-            return false;
+        renderStateLock.lock();
+        try {
+            FiguraRenderer renderer = this.renderer;
+            if (renderer == null || !loaded || parent == null || !parent.isPivot)
+                return false;
 
-        Queue<PivotCustomization> queue = renderer.getPivotCustomizationQueue(parent);
+            Queue<PivotCustomization> queue = renderer.getPivotCustomizationQueue(parent);
 
-        if (queue == null || queue.isEmpty())
-            return false;
+            if (queue == null || queue.isEmpty())
+                return false;
 
-        List<PivotCustomization> matrices = new ArrayList<>();
-        int i = 0;
-        PivotCustomization matrixPair;
-        while (i++ < 1000 && (matrixPair = queue.poll()) != null) // limit of 1000 pivot part renders, just in case something goes infinitely somehow
-            matrices.add(matrixPair);
+            List<PivotCustomization> matrices = new ArrayList<>();
+            int i = 0;
+            PivotCustomization matrixPair;
+            while (i++ < 1000 && (matrixPair = queue.poll()) != null) // limit of 1000 pivot part renders, just in case something goes infinitely somehow
+                matrices.add(matrixPair);
 
-        queue.clear();
+            queue.clear();
 
-        // A vanilla layer can only render one item/armor/parrot/wing at a time.
-        // Draining every queued matrix prevents duplicate accidental pivot parts from
-        // leaking into later layers. The deepest visible Figura pivot is the most
-        // specific model pivot, so it wins over shallow/default Minecraft-body pivots.
-        PivotCustomization queuedMatrixPair = matrices.get(0);
-        for (PivotCustomization matrix : matrices) {
-            if (matrix.modelDepth() >= queuedMatrixPair.modelDepth())
-                queuedMatrixPair = matrix;
+            // A vanilla layer can only render one item/armor/parrot/wing at a time.
+            // Draining every queued matrix prevents duplicate accidental pivot parts from
+            // leaking into later layers. The deepest visible Figura pivot is the most
+            // specific model pivot, so it wins over shallow/default Minecraft-body pivots.
+            PivotCustomization queuedMatrixPair = matrices.get(0);
+            for (PivotCustomization matrix : matrices) {
+                if (matrix.modelDepth() >= queuedMatrixPair.modelDepth())
+                    queuedMatrixPair = matrix;
+            }
+
+            PartCustomization customization = new PartCustomization();
+            customization.setPositionMatrix(queuedMatrixPair.positionMatrix());
+            customization.setNormalMatrix(queuedMatrixPair.normalMatrix());
+            customization.needsMatrixRecalculation = false;
+            PoseStack stack = customization.copyIntoGlobalPoseStack();
+            consumer.accept(stack);
+
+            return true;
+        } finally {
+            renderStateLock.unlock();
         }
-
-        PartCustomization customization = new PartCustomization();
-        customization.setPositionMatrix(queuedMatrixPair.positionMatrix());
-        customization.setNormalMatrix(queuedMatrixPair.normalMatrix());
-        customization.needsMatrixRecalculation = false;
-        PoseStack stack = customization.copyIntoGlobalPoseStack();
-        consumer.accept(stack);
-
-        return true;
     }
 
     public void clearPivotPart(ParentType parent) {
-        if (renderer == null || parent == null || !parent.isPivot)
-            return;
+        renderStateLock.lock();
+        try {
+            FiguraRenderer renderer = this.renderer;
+            if (renderer == null || parent == null || !parent.isPivot)
+                return;
 
-        Queue<PivotCustomization> queue = renderer.getPivotCustomizationQueue(parent);
-        if (queue != null)
-            queue.clear();
+            Queue<PivotCustomization> queue = renderer.getPivotCustomizationQueue(parent);
+            if (queue != null)
+                queue.clear();
+        } finally {
+            renderStateLock.unlock();
+        }
     }
 
     public void updateMatrices(EntityModel<?> entityModel, PoseStack stack) {
-        if (renderer == null || !loaded)
-            return;
+        renderStateLock.lock();
+        try {
+            if (renderer == null || !loaded)
+                return;
 
-        FiguraMod.pushProfiler(FiguraMod.MOD_ID);
-        FiguraMod.pushProfiler(this);
-        FiguraMod.pushProfiler("updateMatrices");
+            FiguraMod.pushProfiler(FiguraMod.MOD_ID);
+            FiguraMod.pushProfiler(this);
+            FiguraMod.pushProfiler("updateMatrices");
 
-        renderer.vanillaModelData.update(entityModel);
-        renderer.currentFilterScheme = PartFilterScheme.MODEL;
-        renderer.setMatrices(stack);
-        renderer.updateMatrices();
-
-        FiguraMod.popProfiler(3);
+            try {
+                renderer.vanillaModelData.update(entityModel);
+                renderer.currentFilterScheme = PartFilterScheme.MODEL;
+                renderer.setMatrices(stack);
+                renderer.updateMatrices();
+            } finally {
+                FiguraMod.popProfiler(3);
+            }
+        } finally {
+            renderStateLock.unlock();
+        }
     }
 
 
@@ -1264,8 +1341,8 @@ public class Avatar {
         }
     }
 
-    private int getVersionStatus() {
-        if (version == null || (NetworkStuff.latestVersion != null && version.compareTo(NetworkStuff.latestVersion) > 0))
+    private int getVersionStatus(boolean explicitTargetVersion) {
+        if (!explicitTargetVersion || version == null || (NetworkStuff.latestVersion != null && version.compareTo(NetworkStuff.latestVersion) > 0))
             return 0;
         return version.compareTo(FiguraMod.VERSION);
     }

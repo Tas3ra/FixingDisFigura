@@ -1269,8 +1269,7 @@ public class FiguraModelPart implements Comparable<FiguraModelPart> {
             value = "model_part.new_text")
     public TextTask newText(@LuaNotNil String name) {
         TextTask task = new TextTask(name, owner, this);
-        this.renderTasks.put(name, task);
-        return task;
+        return putRenderTask(name, task);
     }
 
     @LuaWhitelist
@@ -1282,8 +1281,7 @@ public class FiguraModelPart implements Comparable<FiguraModelPart> {
             value = "model_part.new_item")
     public ItemTask newItem(@LuaNotNil String name) {
         ItemTask task = new ItemTask(name, owner, this);
-        this.renderTasks.put(name, task);
-        return task;
+        return putRenderTask(name, task);
     }
 
     @LuaWhitelist
@@ -1295,8 +1293,7 @@ public class FiguraModelPart implements Comparable<FiguraModelPart> {
             value = "model_part.new_block")
     public BlockTask newBlock(@LuaNotNil String name) {
         BlockTask task = new BlockTask(name, owner, this);
-        this.renderTasks.put(name, task);
-        return task;
+        return putRenderTask(name, task);
     }
 
     @LuaWhitelist
@@ -1308,8 +1305,7 @@ public class FiguraModelPart implements Comparable<FiguraModelPart> {
             value = "model_part.new_sprite")
     public SpriteTask newSprite(@LuaNotNil String name) {
         SpriteTask task = new SpriteTask(name, owner, this);
-        this.renderTasks.put(name, task);
-        return task;
+        return putRenderTask(name, task);
     }
 
     @LuaWhitelist
@@ -1321,15 +1317,21 @@ public class FiguraModelPart implements Comparable<FiguraModelPart> {
             value = "model_part.new_entity")
     public EntityTask newEntity(@LuaNotNil String name) {
         EntityTask task = new EntityTask(name, owner, this);
-        this.renderTasks.put(name, task);
-        return task;
+        return putRenderTask(name, task);
     }
 
     @LuaWhitelist
     @LuaMethodDoc(overloads = @LuaMethodOverload(argumentTypes = RenderTask.class, argumentNames = "renderTask"), value = "model_part.add_task")
     public RenderTask addTask(@LuaNotNil RenderTask renderTask) {
-        this.renderTasks.put(renderTask.getName(), renderTask);
-        return renderTask;
+        return putRenderTask(renderTask.getName(), renderTask);
+    }
+
+    private <T extends RenderTask> T putRenderTask(String name, T task) {
+        RenderTask previous = this.renderTasks.put(name, task);
+        if (previous != null && previous != task)
+            previous.figura$markRemoved();
+        task.figura$markAdded();
+        return task;
     }
 
     @LuaWhitelist
@@ -1359,12 +1361,19 @@ public class FiguraModelPart implements Comparable<FiguraModelPart> {
             },
             value = "model_part.remove_task")
     public FiguraModelPart removeTask(Object x) {
-        if (x instanceof String s)
-            this.renderTasks.remove(s);
-        else if (x instanceof RenderTask t)
-            this.renderTasks.remove(t.getName());
-        else if (x == null)
+        if (x instanceof String s) {
+            RenderTask removed = this.renderTasks.remove(s);
+            if (removed != null)
+                removed.figura$markRemoved();
+        }
+        else if (x instanceof RenderTask t) {
+            this.renderTasks.remove(t.getName(), t);
+            t.figura$markRemoved();
+        }
+        else if (x == null) {
+            this.renderTasks.values().forEach(RenderTask::figura$markRemoved);
             this.renderTasks.clear();
+        }
         else
             throw new LuaError("Illegal argument to removeTask(): " + x.getClass().getSimpleName());
         return this;

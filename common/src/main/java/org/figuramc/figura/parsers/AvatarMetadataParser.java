@@ -48,13 +48,20 @@ public class AvatarMetadataParser {
             }
         }
 
-        // version
-        Version version = new Version(metadata.version);
-        if (version.invalid)
+        // Figura compatibility target. The avatar.json "version" field is the avatar's own
+        // package version, so only explicit target-version fields should drive runtime warnings.
+        String targetVersion = firstNonBlank(metadata.figuraVersion, metadata.targetVersion, metadata.minimumFiguraVersion, metadata.minFiguraVersion);
+        Version version = new Version(targetVersion == null ? "" : targetVersion);
+        boolean explicitTargetVersion = !version.invalid;
+        if (!explicitTargetVersion)
             version = FiguraMod.VERSION;
 
         nbt.putString("name", metadata.name == null || metadata.name.isBlank() ? filename : metadata.name);
         nbt.putString("ver", version.toString());
+        if (explicitTargetVersion)
+            nbt.putBoolean("targetVerExplicit", true);
+        if (metadata.version != null && !metadata.version.isBlank())
+            nbt.putString("avatarVersion", metadata.version);
         if (metadata.color != null) nbt.putString("color", metadata.color);
         if (metadata.background != null) nbt.putString("bg", metadata.background);
         if (metadata.id != null) nbt.putString("id", metadata.id);
@@ -213,11 +220,20 @@ public class AvatarMetadataParser {
         return current;
     }
 
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank())
+                return value;
+        }
+        return null;
+    }
+
 
 
     // json object class
     public static class Metadata {
         public String name, description, author, version, color, background, id;
+        public String figuraVersion, targetVersion, minimumFiguraVersion, minFiguraVersion;
         public String[] authors, autoScripts, autoAnims, ignoredTextures, resources;
         public HashMap<String, Customization> customizations;
     }

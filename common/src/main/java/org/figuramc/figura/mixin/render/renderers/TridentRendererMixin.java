@@ -65,17 +65,19 @@ public abstract class TridentRendererMixin<T extends ThrownTrident, S extends Th
             FiguraMod.pushProfiler(avatar);
             FiguraMod.pushProfiler("tridentRender");
 
-            FiguraMod.pushProfiler("event");
-            boolean bool = avatar.tridentRenderEvent(tickDelta, EntityAPI.wrap(trident));
+            try {
+                FiguraMod.pushProfiler("event");
+                boolean bool = avatar.tridentRenderEvent(tickDelta, EntityAPI.wrap(trident));
 
-            FiguraMod.popPushProfiler("render");
-            if (bool || avatar.renderTrident(poseStack, bufferSource, tickDelta, thrownTridentRenderState.lightCoords)) {
-                poseStack.popPose();
-                return false;
+                FiguraMod.popPushProfiler("render");
+                if (bool || avatar.renderTrident(poseStack, bufferSource, tickDelta, thrownTridentRenderState.lightCoords)) {
+                    return false;
+                }
+
+                return true;
+            } finally {
+                FiguraMod.popProfiler(4);
             }
-
-            FiguraMod.popProfiler(4);
-            return true;
         });
     }
 

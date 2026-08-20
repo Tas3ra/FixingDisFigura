@@ -267,16 +267,8 @@ public class NetworkStuff {
     }
 
     public static void checkVersion() {
-        queueString(Util.NIL_UUID, HttpAPI::getVersion, (code, data) -> {
-            responseDebug("checkVersion", code, data);
-            JsonObject json = JsonParser.parseString(data).getAsJsonObject();
-            int config = Configs.UPDATE_CHANNEL.value;
-            latestVersion = new Version(json.get(config <= 1 ? "release" : "prerelease").getAsString());
-            if (config == 0)
-                return;
-            if (latestVersion.compareTo(FiguraMod.VERSION) > 0)
-                FiguraToast.sendToast(FiguraText.of("toast.new_version"), latestVersion);
-        });
+        // FixingDisFigura uses its own release flow, so do not poll Figura's upstream updater.
+        latestVersion = null;
     }
 
     public static void setLimits() {

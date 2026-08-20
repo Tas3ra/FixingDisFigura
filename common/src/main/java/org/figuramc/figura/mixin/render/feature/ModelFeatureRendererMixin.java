@@ -14,10 +14,14 @@ import org.figuramc.figura.ducks.FiguraSubmitCallBackExtension;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,6 +32,9 @@ public class ModelFeatureRendererMixin {
     @Shadow
     @Final
     private PoseStack poseStack;
+
+    @Unique
+    private final Map<SubmitNodeStorage.ModelSubmit<?>, Boolean> figura$renderVanilla = new IdentityHashMap<>();
 
     @ModifyArg(method = "render", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/feature/ModelFeatureRenderer;renderBatch(Lnet/minecraft/client/renderer/MultiBufferSource$BufferSource;Lnet/minecraft/client/renderer/OutlineBufferSource;Ljava/util/Map;Lnet/minecraft/client/renderer/MultiBufferSource$BufferSource;)V"), index = 2)
     private Map<RenderType, List<SubmitNodeStorage.ModelSubmit<?>>> figura$snapshotModelSubmits(Map<RenderType, List<SubmitNodeStorage.ModelSubmit<?>>> modelSubmits) {
@@ -67,16 +74,42 @@ public class ModelFeatureRendererMixin {
             }
         }
         callBackExtension.figura$getPreRenderingCallbacks().clear();
+        figura$renderVanilla.put(modelSubmit, renderVanilla);
+
+        if (renderVanilla) {
+            original.call(model, renderPoseStack, renderVertexConsumer, light, overlay, color);
+        }
+    }
+
+    @WrapOperation(method = "renderModel", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/model/Model;renderToBuffer(Lcom/mojang/blaze3d/vertex/PoseStack;Lcom/mojang/blaze3d/vertex/VertexConsumer;III)V", ordinal = 1))
+    private <S> void figura$renderModelOutline(Model<?> model, PoseStack renderPoseStack, VertexConsumer renderVertexConsumer, int light, int overlay, int color,
+                                               Operation<Void> original, SubmitNodeStorage.ModelSubmit<S> modelSubmit, RenderType renderType, VertexConsumer vertexConsumer,
+                                               OutlineBufferSource outlineBufferSource, MultiBufferSource.BufferSource bufferSource) {
+        if (figura$renderVanilla.getOrDefault(modelSubmit, true)) {
+            original.call(model, renderPoseStack, renderVertexConsumer, light, overlay, color);
+        }
+    }
+
+    @WrapOperation(method = "renderModel", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/model/Model;renderToBuffer(Lcom/mojang/blaze3d/vertex/PoseStack;Lcom/mojang/blaze3d/vertex/VertexConsumer;III)V", ordinal = 2))
+    private <S> void figura$renderModelCrumbling(Model<?> model, PoseStack renderPoseStack, VertexConsumer renderVertexConsumer, int light, int overlay, int color,
+                                                 Operation<Void> original, SubmitNodeStorage.ModelSubmit<S> modelSubmit, RenderType renderType, VertexConsumer vertexConsumer,
+                                                 OutlineBufferSource outlineBufferSource, MultiBufferSource.BufferSource bufferSource) {
+        if (figura$renderVanilla.getOrDefault(modelSubmit, true)) {
+            original.call(model, renderPoseStack, renderVertexConsumer, light, overlay, color);
+        }
+    }
+
+    @Inject(method = "renderModel", at = @At("RETURN"))
+    private <S> void figura$afterRenderModel(SubmitNodeStorage.ModelSubmit<S> modelSubmit, RenderType renderType, VertexConsumer vertexConsumer,
+                                             OutlineBufferSource outlineBufferSource, MultiBufferSource.BufferSource bufferSource, CallbackInfo ci) {
+        FiguraSubmitCallBackExtension callBackExtension = (FiguraSubmitCallBackExtension) (Object) modelSubmit;
 
         try {
-            if (renderVanilla) {
-                original.call(model, renderPoseStack, renderVertexConsumer, light, overlay, color);
-            }
-        } finally {
             for (var callback : new ArrayList<>(callBackExtension.figura$getPostRenderingCallbacks()))
                 callback.run();
-
+        } finally {
             callBackExtension.figura$getPostRenderingCallbacks().clear();
+            figura$renderVanilla.remove(modelSubmit);
         }
     }
 }

@@ -684,10 +684,18 @@ public class ClientAPI {
     public static TextureAtlasAPI getAtlas(@LuaNotNil String atlas) {
         Identifier path = LuaUtils.parsePath(atlas);
         try {
-            return new TextureAtlasAPI(Minecraft.getInstance().getAtlasManager().getAtlasOrThrow(path));
+            return new TextureAtlasAPI(Minecraft.getInstance().getAtlasManager().getAtlasOrThrow(normalizeAtlasId(path)));
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private static Identifier normalizeAtlasId(Identifier path) {
+        for (AtlasManager.AtlasConfig config : AtlasManagerAccessor.getVanillaAtlases()) {
+            if (path.equals(config.textureId()) || path.equals(config.definitionLocation()))
+                return config.definitionLocation();
+        }
+        return path;
     }
 
     @LuaWhitelist
