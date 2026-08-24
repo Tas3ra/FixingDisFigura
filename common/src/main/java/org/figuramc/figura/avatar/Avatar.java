@@ -42,6 +42,7 @@ import org.figuramc.figura.ducks.FiguraEntityRenderStateExtension;
 import org.figuramc.figura.ducks.FiguraSubmitCallBackExtension;
 import org.figuramc.figura.ducks.NodeCollectorExtension;
 import org.figuramc.figura.gui.FiguraPortraitRenderState;
+import org.figuramc.figura.gui.ViewerVisibilityManager;
 import org.figuramc.figura.lua.FiguraLuaPrinter;
 import org.figuramc.figura.lua.FiguraLuaRuntime;
 import org.figuramc.figura.lua.api.TextureAPI;
@@ -52,6 +53,7 @@ import org.figuramc.figura.lua.api.entity.EntityAPI;
 import org.figuramc.figura.lua.api.particle.ParticleAPI;
 import org.figuramc.figura.lua.api.ping.PingArg;
 import org.figuramc.figura.lua.api.ping.PingFunction;
+import org.figuramc.figura.lua.api.popup.PopupAPI;
 import org.figuramc.figura.lua.api.sound.SoundAPI;
 import org.figuramc.figura.lua.api.world.BlockStateAPI;
 import org.figuramc.figura.lua.api.world.ItemStackAPI;
@@ -68,6 +70,7 @@ import org.figuramc.figura.model.rendering.EntityRenderMode;
 import org.figuramc.figura.model.rendering.ImmediateFiguraRenderer;
 import org.figuramc.figura.model.rendering.PartFilterScheme;
 import org.figuramc.figura.model.rendering.texture.FiguraTexture;
+import org.figuramc.figura.model.rendering.texture.LuaRenderTypeRegistry;
 import org.figuramc.figura.permissions.PermissionManager;
 import org.figuramc.figura.permissions.PermissionPack;
 import org.figuramc.figura.permissions.Permissions;
@@ -89,6 +92,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import javax.sound.sampled.AudioFormat;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -118,6 +122,7 @@ public class Avatar {
     public Version version;
     public String id;
     public int fileSize;
+    public final LuaRenderTypeRegistry renderTypes = new LuaRenderTypeRegistry();
     public String color;
     public Map<String, String> badgeToColor = new HashMap<>();
     public Map<String, byte[]> resources = new HashMap<>();
@@ -137,6 +142,7 @@ public class Avatar {
     public final PermissionPack.PlayerPermissionPack permissions;
 
     public final Map<String, SoundBuffer> customSounds = new HashMap<>();
+    public final Map<String, Integer> customSoundChannels = new HashMap<>();
     public final Map<Integer, Animation> animations = new HashMap<>();
 
     // runtime status
@@ -328,6 +334,9 @@ public class Avatar {
     public void runPing(int id, byte[] data) {
         events.offer(() -> {
             if (scriptError || luaRuntime == null || !loaded)
+                return;
+
+            if (id == PopupAPI.SYNC_PING_ID && PopupAPI.handleSync(this, data))
                 return;
 
             LuaValue[] args = PingArg.fromByteArray(data, this);
@@ -534,6 +543,10 @@ public class Avatar {
         return isCancelled(result);
     }
 
+    public boolean hasEventHandlers(String event) {
+        return loaded && luaRuntime != null && luaRuntime.events != null && luaRuntime.events.hasHandlers(event);
+    }
+
     public void resourceReloadEvent() {
         if (loaded) run("RESOURCE_RELOAD", tick);
     }
@@ -622,17 +635,19 @@ public class Avatar {
             boolean previousAllowMatrixUpdate = renderer.allowMatrixUpdate;
             boolean previousUpdateLight = renderer.updateLight;
             boolean updateRenderMatrices = renderMode != EntityRenderMode.FIRST_PERSON;
+            boolean guiRender = isGuiRenderMode(renderMode);
+            int renderLight = guiRender ? LightTexture.FULL_BRIGHT : light;
 
             try {
                 renderer.allowMatrixUpdate = previousAllowMatrixUpdate || updateRenderMatrices;
-                renderer.updateLight = previousUpdateLight || updateRenderMatrices;
+                renderer.updateLight = !guiRender && (previousUpdateLight || updateRenderMatrices);
                 renderer.vanillaModelData.update(entityModel);
                 renderer.yaw = yaw;
                 renderer.entity = entity;
 
                 renderer.setupRenderer(
                         filter, bufferSource, stack,
-                        delta, light, alpha, overlay,
+                        delta, renderLight, alpha, overlay,
                         translucent, glowing
                 );
 
@@ -646,7 +661,14 @@ public class Avatar {
         }
     }
 
+    private static boolean isGuiRenderMode(EntityRenderMode mode) {
+        return mode == EntityRenderMode.MINECRAFT_GUI || mode == EntityRenderMode.FIGURA_GUI || mode == EntityRenderMode.PAPERDOLL;
+    }
+
     public void worldRender(Entity entity, double camX, double camY, double camZ, PoseStack stack, MultiBufferSource bufferSource, int lightFallback, float tickDelta, EntityRenderMode mode) {
+        if (entity != null && !ViewerVisibilityManager.isAvatarVisible(entity.getUUID()))
+            return;
+
         renderStateLock.lock();
         try {
             if (renderer == null || !loaded)
@@ -767,6 +789,7 @@ public class Avatar {
         boolean previousAllowHiddenTransforms = renderer.allowHiddenTransforms;
         boolean previousAllowHiddenDescendantRendering = renderer.allowHiddenDescendantRendering;
         boolean previousAllowMatrixUpdate = renderer.allowMatrixUpdate;
+        boolean previousUpdateLight = renderer.updateLight;
         boolean previousIgnoreVanillaVisibility = renderer.ignoreVanillaVisibility;
         EntityRenderMode previousRenderMode = renderMode;
 
@@ -778,6 +801,7 @@ public class Avatar {
             // FIRST_PERSON is the only pass with the viewmodel hand transform, so keep
             // partToWorldMatrix accurate for scripts that read muzzle/hand markers here.
             renderer.allowMatrixUpdate = true;
+            renderer.updateLight = true;
             renderer.ignoreVanillaVisibility = true;
 
             if (!config) {
@@ -791,6 +815,7 @@ public class Avatar {
             renderer.allowHiddenTransforms = previousAllowHiddenTransforms;
             renderer.allowHiddenDescendantRendering = previousAllowHiddenDescendantRendering;
             renderer.allowMatrixUpdate = previousAllowMatrixUpdate;
+            renderer.updateLight = previousUpdateLight;
             renderer.ignoreVanillaVisibility = previousIgnoreVanillaVisibility;
             renderMode = previousRenderMode;
         }
@@ -852,6 +877,7 @@ public class Avatar {
             EntityRenderMode previousRenderMode = renderMode;
             boolean previousAllowMatrixUpdate = renderer.allowMatrixUpdate;
             boolean previousUpdateLight = renderer.updateLight;
+            int renderLight = guiItem ? LightTexture.FULL_BRIGHT : light;
 
             try {
                 if (guiItem) {
@@ -875,7 +901,7 @@ public class Avatar {
 
                 renderer.setupRenderer(
                         PartFilterScheme.SKULL, bufferSource, stack,
-                        1f, light, 1f, OverlayTexture.NO_OVERLAY,
+                        1f, renderLight, 1f, OverlayTexture.NO_OVERLAY,
                         false, bufferSource instanceof OutlineBufferSource
                 );
 
@@ -883,7 +909,7 @@ public class Avatar {
                 complexity.use(comp);
 
                 // head
-                return comp > 0 || headRender(stack, bufferSource, light, true);
+                return comp > 0 || headRender(stack, bufferSource, renderLight, true);
             } finally {
                 renderMode = previousRenderMode;
                 renderer.allowPivotParts = allowPivotParts;
@@ -1291,6 +1317,7 @@ public class Avatar {
                 value.releaseAlBuffer();
         }
         customSounds.clear();
+        customSoundChannels.clear();
     }
 
     public void closeBuffers() {
@@ -1369,6 +1396,8 @@ public class Avatar {
         FiguraLuaRuntime runtime = new FiguraLuaRuntime(this, scripts);
         if (renderer != null && renderer.root != null)
             runtime.setGlobal("models", renderer.root);
+        if (metadata.contains("popupControls") && runtime.popup != null)
+            runtime.popup.addConfiguredInputs(metadata.getListOrEmpty("popupControls"));
 
         init.reset(permissions.get(Permissions.INIT_INST));
         runtime.setInstructionLimit(init.remaining);
@@ -1449,12 +1478,18 @@ public class Avatar {
     public void loadSound(String name, byte[] data) throws Exception {
         if (SoundAPI.getSoundEngine().figura$isEngineActive()) {
             try (ByteArrayInputStream inputStream = new ByteArrayInputStream(data); JOrbisAudioStream oggAudioStream = new JOrbisAudioStream(inputStream)) {
-                SoundBuffer sound = new SoundBuffer(oggAudioStream.readAll(), oggAudioStream.getFormat());
+                AudioFormat format = oggAudioStream.getFormat();
+                SoundBuffer sound = new SoundBuffer(oggAudioStream.readAll(), format);
                 this.customSounds.put(name, sound);
+                this.customSoundChannels.put(name, format.getChannels());
             }
         } else {
             FiguraMod.LOGGER.error("Sound is not supported or enabled on this system but a custom sound tried to load anyway, scripts may break.");
         }
+    }
+
+    public int getCustomSoundChannels(String name) {
+        return customSoundChannels.getOrDefault(name, 1);
     }
 
     public FiguraTexture registerTexture(String name, NativeImage image, boolean ignoreSize) {

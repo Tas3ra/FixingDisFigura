@@ -17,6 +17,7 @@ import net.minecraft.client.renderer.state.CameraRenderState;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 import org.figuramc.figura.FiguraMod;
@@ -28,6 +29,7 @@ import org.figuramc.figura.ducks.EntityRendererAccessor;
 import org.figuramc.figura.ducks.FiguraEntityRenderStateExtension;
 import org.figuramc.figura.ducks.FiguraSubmitCallBackExtension;
 import org.figuramc.figura.ducks.NodeCollectorExtension;
+import org.figuramc.figura.gui.ViewerVisibilityManager;
 import org.figuramc.figura.lua.api.nameplate.EntityNameplateCustomization;
 import org.figuramc.figura.lua.api.vanilla_model.VanillaPart;
 import org.figuramc.figura.permissions.Permissions;
@@ -40,6 +42,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.BiFunction;
@@ -106,7 +109,7 @@ public abstract class PlayerRendererMixin extends LivingEntityRenderer<AbstractC
         Component replacement = hasCustom && custom.getJson() != null ? custom.getJson().copy() : name;
 
         // name
-        replacement = TextUtils.replaceInText(replacement, "\\$\\{name\\}", name);
+        replacement = TextUtils.replaceNamePlaceholders(replacement, name, figura$getNameplateHealth(player));
 
         // badges
         FiguraMod.popPushProfiler("badges");
@@ -115,9 +118,21 @@ public abstract class PlayerRendererMixin extends LivingEntityRenderer<AbstractC
 			replacement = Badges.appendBadges(replacement, badgeOwner, config > 1);
 
         FiguraMod.popPushProfiler("applyName");
-        text = TextUtils.replaceInText(text, "\\b" + Pattern.quote(player.nameTag.getString()) + "\\b", replacement);
+        text = TextUtils.replaceInTextPreservingInteraction(text, "\\b" + Pattern.quote(player.nameTag.getString()) + "\\b", replacement);
 
         return text;
+    }
+
+    @Unique
+    private Component figura$getNameplateHealth(AvatarRenderState player) {
+        Entity entity = AvatarManager.getCachedEntity(player.id);
+        if (!(entity instanceof LivingEntity livingEntity))
+            return null;
+
+        float health = livingEntity.getHealth();
+        if (health == (int) health)
+            return Component.literal(Integer.toString((int) health));
+        return Component.literal(String.format(Locale.ROOT, "%.1f", health));
     }
 
     @ModifyArg(method = "submitNameTag(Lnet/minecraft/client/renderer/entity/state/AvatarRenderState;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;Lnet/minecraft/client/renderer/state/CameraRenderState;)V", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/SubmitNodeCollector;submitNameTag(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/world/phys/Vec3;ILnet/minecraft/network/chat/Component;ZIDLnet/minecraft/client/renderer/state/CameraRenderState;)V", ordinal = 0), index = 1)
@@ -145,11 +160,7 @@ public abstract class PlayerRendererMixin extends LivingEntityRenderer<AbstractC
                 return attachment;
         }
 
-        Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.level == null)
-            return attachment;
-
-        Entity entity = minecraft.level.getEntity(playerRenderState.id);
+        Entity entity = AvatarManager.getCachedEntity(playerRenderState.id);
         if (!(entity instanceof Player))
             return attachment;
 
@@ -169,7 +180,7 @@ public abstract class PlayerRendererMixin extends LivingEntityRenderer<AbstractC
     @Unique
     private UUID figura$getBadgeOwner(AvatarRenderState player) {
         Minecraft minecraft = Minecraft.getInstance();
-        Entity entity = minecraft.level == null ? null : minecraft.level.getEntity(player.id);
+        Entity entity = AvatarManager.getCachedEntity(player.id);
         if (entity != null)
             return entity.getUUID();
 
@@ -200,10 +211,15 @@ public abstract class PlayerRendererMixin extends LivingEntityRenderer<AbstractC
         if (config == 0 || AvatarManager.panic || Minecraft.getInstance().level == null)
             return;
 
-        Entity entity = Minecraft.getInstance().level.getEntity(playerRenderState.id);
+        Entity entity = AvatarManager.getCachedEntity(playerRenderState.id);
 
         if (!(entity instanceof Player player) || this.entityRenderDispatcher.distanceToSqr(player) > 4096)
             return;
+
+        if (!ViewerVisibilityManager.isNameplateVisible(player.getUUID())) {
+            ci.cancel();
+            return;
+        }
 
         // get customizations
         Avatar avatar = AvatarManager.getAvatarForPlayer(player.getUUID());

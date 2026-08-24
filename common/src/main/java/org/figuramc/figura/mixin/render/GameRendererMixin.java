@@ -78,12 +78,16 @@ public abstract class GameRendererMixin implements GameRendererAccessor {
     private final Matrix4f figura$viewMatrix = new Matrix4f();
     @Unique
     private boolean figura$hasFiguraViewMatrix;
+    @Unique
+    private Avatar figura$renderLevelCameraAvatar;
+    @Unique
+    private boolean figura$renderLevelCameraAvatarCached;
 
     @WrapOperation(method = "renderLevel",
             at = @At(value = "INVOKE",
                     target = "Lorg/joml/Matrix4f;rotation(Lorg/joml/Quaternionfc;)Lorg/joml/Matrix4f;"))
     private Matrix4f onCameraRotation(Matrix4f instance, Quaternionfc quat, Operation<Matrix4f> original) {
-        Avatar avatar = AvatarManager.getAvatar(this.minecraft.getCameraEntity() == null ? this.minecraft.player : this.minecraft.getCameraEntity());
+        Avatar avatar = figura$getCameraAvatar();
         if (!RenderUtils.vanillaModelAndScript(avatar)) {
             Matrix4f result = original.call(instance, quat);
             figura$hasFiguraViewMatrix = false;
@@ -209,13 +213,21 @@ public abstract class GameRendererMixin implements GameRendererAccessor {
     @Inject(method = "renderLevel", at = @At("HEAD"))
     private void onRenderLevel(DeltaTracker deltaTracker, CallbackInfo ci) {
         hasShaders = ClientAPI.hasShaderPack();
+        figura$renderLevelCameraAvatar = AvatarManager.getAvatar(figura$getCameraEntity());
+        figura$renderLevelCameraAvatarCached = true;
+    }
+
+    @Inject(method = "renderLevel", at = @At("RETURN"))
+    private void afterRenderLevel(DeltaTracker deltaTracker, CallbackInfo ci) {
+        figura$renderLevelCameraAvatar = null;
+        figura$renderLevelCameraAvatarCached = false;
     }
 
     @ModifyArg(method = "renderLevel", index = 0,
             at = @At(value = "INVOKE",
                     target = "Lnet/minecraft/client/renderer/GameRenderer;bobHurt(Lcom/mojang/blaze3d/vertex/PoseStack;F)V"))
     private PoseStack renderLevelBobHurt(PoseStack stack) {
-        Avatar avatar = AvatarManager.getAvatar(this.minecraft.getCameraEntity() == null ? this.minecraft.player : this.minecraft.getCameraEntity());
+        Avatar avatar = figura$getCameraAvatar();
         if (!RenderUtils.vanillaModelAndScript(avatar) || hasShaders) return stack;
         stack.pushPose();
         stack.last().pose().identity();
@@ -235,7 +247,7 @@ public abstract class GameRendererMixin implements GameRendererAccessor {
             at = @At(value = "INVOKE",
                     target = "Lnet/minecraft/client/renderer/GameRenderer;bobView(Lcom/mojang/blaze3d/vertex/PoseStack;F)V"))
     private void figura$stopBobView(GameRenderer instance, PoseStack stack, float f, Operation<GameRenderer> original) {
-        Avatar avatar = AvatarManager.getAvatar(this.minecraft.getCameraEntity() == null ? this.minecraft.player : this.minecraft.getCameraEntity());
+        Avatar avatar = figura$getCameraAvatar();
         if (!RenderUtils.vanillaModelAndScript(avatar) || hasShaders)
             original.call(instance, stack, f);
     }
@@ -244,7 +256,7 @@ public abstract class GameRendererMixin implements GameRendererAccessor {
             at = @At(value = "INVOKE",
                     target = "Lnet/minecraft/client/renderer/GameRenderer;bobHurt(Lcom/mojang/blaze3d/vertex/PoseStack;F)V"))
     private void figura$stopBobHurt(GameRenderer instance, PoseStack stack, float f, Operation<GameRenderer> original) {
-        Avatar avatar = AvatarManager.getAvatar(this.minecraft.getCameraEntity() == null ? this.minecraft.player : this.minecraft.getCameraEntity());
+        Avatar avatar = figura$getCameraAvatar();
         if (!RenderUtils.vanillaModelAndScript(avatar) || hasShaders)
             original.call(instance, stack, f);
     }
@@ -255,8 +267,19 @@ public abstract class GameRendererMixin implements GameRendererAccessor {
                     target = "Lnet/minecraft/client/OptionInstance;get()Ljava/lang/Object;", ordinal = 1))
     @SuppressWarnings("unchecked")
     private<T> T figura$disableConfusionOnMatrix(OptionInstance<T> instance, Operation<T> original) {
-        Avatar avatar = AvatarManager.getAvatar(this.minecraft.getCameraEntity() == null ? this.minecraft.player : this.minecraft.getCameraEntity());
+        Avatar avatar = figura$getCameraAvatar();
         return (!RenderUtils.vanillaModelAndScript(avatar) || hasShaders) ? original.call(instance) : (T) (Object) 0.0;
+    }
+
+    @Unique
+    private Entity figura$getCameraEntity() {
+        Entity entity = this.minecraft.getCameraEntity();
+        return entity == null ? this.minecraft.player : entity;
+    }
+
+    @Unique
+    private Avatar figura$getCameraAvatar() {
+        return figura$renderLevelCameraAvatarCached ? figura$renderLevelCameraAvatar : AvatarManager.getAvatar(figura$getCameraEntity());
     }
 
     @SuppressWarnings("deprecation")

@@ -30,6 +30,7 @@ import org.figuramc.figura.ducks.FiguraSubmitCallBackExtension;
 import org.figuramc.figura.ducks.LivingEntityRendererAccessor;
 import org.figuramc.figura.ducks.NodeCollectorExtension;
 import org.figuramc.figura.gui.PopupMenu;
+import org.figuramc.figura.gui.ViewerVisibilityManager;
 import org.figuramc.figura.lua.api.vanilla_model.VanillaPart;
 import org.figuramc.figura.math.matrix.FiguraMat4;
 import org.figuramc.figura.model.rendering.PartFilterScheme;
@@ -92,6 +93,13 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
         currentAvatar = AvatarManager.getAvatar(livingEntityRenderState);
         if (currentAvatar == null)
             return;
+
+        Integer entityId = ((FiguraEntityRenderStateExtension)livingEntityRenderState).figura$getEntityId();
+        Entity entity = entityId == null ? null : AvatarManager.getCachedEntity(entityId);
+        if (entity != null && !ViewerVisibilityManager.isAvatarVisible(entity.getUUID())) {
+            currentAvatar = null;
+            return;
+        }
 
         lastPose = poseStack.last().pose();
     }
@@ -182,7 +190,9 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
 
         int overlay = getOverlayCoords(livingEntityRenderState, getWhiteOverlayProgress(livingEntityRenderState));
 
-        Entity entity = Minecraft.getInstance().level.getEntity(entityId);
+        Entity entity = AvatarManager.getCachedEntity(entityId);
+        if (entity == null)
+            return;
         // actually do the render here
 
         NodeCollectorExtension nodeCollectorExtension = (NodeCollectorExtension) submitNodeCollector;
@@ -270,6 +280,8 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
     private void shouldShowName(T livingEntity, double d, CallbackInfoReturnable<Boolean> cir) {
         if (UIHelper.paperdoll)
             cir.setReturnValue(Configs.PREVIEW_NAMEPLATE.value);
+        else if (!ViewerVisibilityManager.isNameplateVisible(livingEntity.getUUID()))
+            cir.setReturnValue(false);
         else if (!PopupMenu.isProfileTarget() && livingEntity.getUUID().equals(PopupMenu.getEntityId()))
             cir.setReturnValue(false);
         else if (!AvatarManager.panic) {

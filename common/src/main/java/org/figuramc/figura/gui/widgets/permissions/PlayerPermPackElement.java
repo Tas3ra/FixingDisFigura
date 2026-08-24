@@ -177,9 +177,9 @@ public class PlayerPermPackElement extends AbstractPermPackElement {
             if (name == null)
                 name = ogName;
 
-            name = TextUtils.replaceInText(name, "\\$\\{name\\}", ogName);
+            name = TextUtils.replaceNamePlaceholders(name, ogName);
             name = TextUtils.splitLines(name).get(0);
-            name = Component.empty().append(name.copy().withStyle(Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(Component.literal(this.name + "\n" + this.owner)))));
+            name = TextUtils.copyInteraction(name, Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(Component.literal(this.name + "\n" + this.owner))));
 
             // badges
             name = Badges.appendBadges(name, owner, false);

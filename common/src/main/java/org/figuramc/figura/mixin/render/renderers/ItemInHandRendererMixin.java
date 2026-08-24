@@ -23,6 +23,7 @@ import org.figuramc.figura.avatar.Avatar;
 import org.figuramc.figura.avatar.AvatarManager;
 import org.figuramc.figura.ducks.FiguraItemStackRenderStateExtension;
 import org.figuramc.figura.ducks.FiguraSubmitCallBackExtension;
+import org.figuramc.figura.ducks.NodeCollectorExtension;
 import org.figuramc.figura.ducks.SkullBlockRendererAccessor;
 import org.figuramc.figura.lua.api.vanilla_model.VanillaModelPart;
 import org.figuramc.figura.lua.api.world.ItemStackAPI;
@@ -70,12 +71,17 @@ public abstract class ItemInHandRendererMixin {
         if (avatar == null)
             return;
 
-        FiguraMod.pushProfiler(FiguraMod.MOD_ID);
-        FiguraMod.pushProfiler(avatar);
-        FiguraMod.pushProfiler("postRenderEvent");
-        avatar.postRenderEvent(tickDelta, new FiguraMat4().set(matrices.last().pose()));
+        Avatar localAvatar = avatar;
+        FiguraMat4 poseMatrix = new FiguraMat4().set(matrices.last().pose());
+        ((NodeCollectorExtension) submitNodeCollector).submitFiguraModel(localAvatar, null, (playerAvatar, state, bufferSource) -> {
+            FiguraMod.pushProfiler(FiguraMod.MOD_ID);
+            FiguraMod.pushProfiler(playerAvatar);
+            FiguraMod.pushProfiler("postRenderEvent");
+            playerAvatar.postRenderEvent(tickDelta, poseMatrix);
+            FiguraMod.popProfiler(3);
+            return null;
+        });
         avatar = null;
-        FiguraMod.popProfiler(3);
 
     }
 

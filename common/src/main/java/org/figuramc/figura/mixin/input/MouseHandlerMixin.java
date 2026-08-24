@@ -36,6 +36,12 @@ public class MouseHandlerMixin {
             return;
         }
 
+        boolean pressed = action != 0;
+        if (pressed && this.minecraft.screen == null && PopupMenu.shouldOpenHeadControlsForMouse(mouseButtonInfo.button()) && PopupMenu.openHeadControlsFromLook()) {
+            ci.cancel();
+            return;
+        }
+
         Avatar avatar = AvatarManager.getAvatarForPlayer(FiguraMod.getLocalPlayerUUID());
         if (avatar == null || avatar.luaRuntime == null)
             return;
@@ -44,8 +50,6 @@ public class MouseHandlerMixin {
             ci.cancel();
             return;
         }
-
-        boolean pressed = action != 0;
 
         if (avatar.luaRuntime != null && FiguraKeybind.set(avatar.luaRuntime.keybinds.keyBindings, InputConstants.Type.MOUSE.getOrCreate(mouseButtonInfo.button()), pressed, mouseButtonInfo.modifiers()))
             ci.cancel();

@@ -17,6 +17,7 @@ import org.figuramc.figura.lua.api.event.LuaEvent;
 import org.figuramc.figura.lua.api.keybind.KeybindAPI;
 import org.figuramc.figura.lua.api.nameplate.NameplateAPI;
 import org.figuramc.figura.lua.api.ping.PingAPI;
+import org.figuramc.figura.lua.api.popup.PopupAPI;
 import org.figuramc.figura.lua.api.vanilla_model.VanillaModelAPI;
 import org.figuramc.figura.permissions.Permissions;
 import org.figuramc.figura.utils.PathUtils;
@@ -52,6 +53,7 @@ public class FiguraLuaRuntime {
     public NameplateAPI nameplate;
     public RendererAPI renderer;
     public ActionWheelAPI action_wheel;
+    public PopupAPI popup;
     public AvatarAPI avatar_meta;
     public PingAPI ping;
     public TextureAPI texture;

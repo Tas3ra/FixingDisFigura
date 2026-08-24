@@ -4,6 +4,7 @@ import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.ComponentSerialization;
 import org.figuramc.figura.lua.docs.FiguraDocsManager;
+import org.figuramc.figura.lua.docs.LuaMethodDoc;
 import org.figuramc.figura.lua.docs.LuaTypeDoc;
 import org.figuramc.figura.utils.TextUtils;
 import org.luaj.vm2.*;
@@ -14,7 +15,9 @@ import org.luaj.vm2.lib.VarArgFunction;
 import java.lang.reflect.*;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * One LuaTypeManager per LuaRuntime, so that people can be allowed to edit the metatables within.
@@ -63,7 +66,12 @@ public class LuaTypeManager {
                         }
                     }
                 } else { // regular methods
-                    indexTable.set(name, getWrapper(method));
+                    VarArgFunction wrapper = getWrapper(method);
+                    indexTable.set(name, wrapper);
+                    for (String alias : getMethodAliases(method, name)) {
+                        if (indexTable.rawget(alias) == LuaValue.NIL)
+                            indexTable.set(alias, wrapper);
+                    }
                 }
             }
             currentClass = currentClass.getSuperclass();
@@ -123,6 +131,27 @@ public class LuaTypeManager {
             if (params[i].isAnnotationPresent(LuaNotNil.class))
                 result[i] = true;
         return result;
+    }
+
+    private static Set<String> getMethodAliases(Method method, String javaName) {
+        Set<String> aliases = new LinkedHashSet<>();
+        if (!method.isAnnotationPresent(LuaMethodDoc.class))
+            return aliases;
+
+        LuaMethodDoc docs = method.getAnnotation(LuaMethodDoc.class);
+        String key = docs.value();
+        int dot = key.lastIndexOf('.');
+        if (dot >= 0 && dot + 1 < key.length())
+            aliases.add(key.substring(dot + 1));
+
+        for (String alias : docs.aliases()) {
+            if (alias != null && !alias.isBlank())
+                aliases.add(alias);
+        }
+
+        aliases.remove(javaName);
+        aliases.remove("");
+        return aliases;
     }
 
     public VarArgFunction getWrapper(Method method) {

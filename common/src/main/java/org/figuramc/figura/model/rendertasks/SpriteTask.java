@@ -19,6 +19,7 @@ import org.figuramc.figura.math.vector.FiguraVec3;
 import org.figuramc.figura.math.vector.FiguraVec4;
 import org.figuramc.figura.model.FiguraModelPart;
 import org.figuramc.figura.model.rendering.Vertex;
+import org.figuramc.figura.model.rendering.texture.FiguraRenderLayer;
 import org.figuramc.figura.model.rendering.texture.FiguraRenderTypes;
 import org.figuramc.figura.model.rendering.texture.FiguraTexture;
 import org.figuramc.figura.utils.ColorUtils;
@@ -29,7 +30,6 @@ import org.luaj.vm2.LuaError;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 @LuaWhitelist
 @LuaTypeDoc(
@@ -44,7 +44,7 @@ public class SpriteTask extends RenderTask {
     private int regionW, regionH;
     private float u = 0f, v = 0f;
     private int r = 0xFF, g = 0xFF, b = 0xFF, a = 0xFF;
-    private FiguraRenderTypes renderType = FiguraRenderTypes.TRANSLUCENT;
+    private FiguraRenderLayer renderType = FiguraRenderTypes.TRANSLUCENT;
     private final List<Vertex> vertices = new ArrayList<>(4);
 
     public SpriteTask(String name, Avatar owner, FiguraModelPart parent) {
@@ -91,7 +91,7 @@ public class SpriteTask extends RenderTask {
 
     @Override
     public boolean shouldRender() {
-        return super.shouldRender() && texture != null && renderType != FiguraRenderTypes.NONE;
+        return super.shouldRender() && texture != null && renderType.baseType() != FiguraRenderTypes.NONE;
     }
 
     private void recalculateVertices() {
@@ -420,12 +420,12 @@ public class SpriteTask extends RenderTask {
             value = "sprite_task.set_render_type"
     )
     public SpriteTask setRenderType(@LuaNotNil String renderType) {
-        try {
-            this.renderType = FiguraRenderTypes.valueOf(renderType.toUpperCase(Locale.US));
-            return this;
-        } catch (Exception ignored) {
+        FiguraRenderLayer layer = owner.renderTypes.resolve(renderType);
+        if (layer == null)
             throw new LuaError("Illegal RenderType: \"" + renderType + "\".");
-        }
+
+        this.renderType = layer;
+        return this;
     }
 
     @LuaWhitelist

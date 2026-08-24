@@ -306,6 +306,18 @@ public class TextUtils {
     }
 
     public static Component replaceInText(FormattedText text, String regex, Object replacement, BiPredicate<String, Style> predicate, int beginIndex, int times) {
+        return replaceInText(text, regex, replacement, predicate, beginIndex, times, ReplacementMode.INHERIT_STYLE);
+    }
+
+    public static Component replaceInTextPreservingInteraction(FormattedText text, String regex, Object replacement) {
+        return replaceInTextPreservingInteraction(text, regex, replacement, (s, style) -> true, 0, Integer.MAX_VALUE);
+    }
+
+    public static Component replaceInTextPreservingInteraction(FormattedText text, String regex, Object replacement, BiPredicate<String, Style> predicate, int beginIndex, int times) {
+        return replaceInText(text, regex, replacement, predicate, beginIndex, times, ReplacementMode.COPY_INTERACTION);
+    }
+
+    private static Component replaceInText(FormattedText text, String regex, Object replacement, BiPredicate<String, Style> predicate, int beginIndex, int times, ReplacementMode mode) {
         // fix replacement object
         Component replace = replacement instanceof Component c ? c : Component.literal(replacement.toString());
         MutableComponent ret = Component.empty();
@@ -329,7 +341,7 @@ public class TextUtils {
                 if (ints[0] > 0 || ints[1] <= 0) {
                     ret.append(Component.literal(s).withStyle(style));
                 } else {
-                    ret.append(Component.empty().withStyle(style).append(replace));
+                    ret.append(applyReplacementMode(replace, style, mode));
                 }
 
                 ints[0]--;
@@ -340,6 +352,51 @@ public class TextUtils {
         }, Style.EMPTY);
 
         return ret;
+    }
+
+    private static Component applyReplacementMode(Component replacement, Style matchedStyle, ReplacementMode mode) {
+        return switch (mode) {
+            case INHERIT_STYLE -> Component.empty().withStyle(matchedStyle).append(replacement.copy());
+            case COPY_INTERACTION -> copyInteraction(replacement, matchedStyle);
+        };
+    }
+
+    public static Component copyInteraction(FormattedText text, Style interactionStyle) {
+        if (interactionStyle == null || (interactionStyle.getClickEvent() == null && interactionStyle.getHoverEvent() == null && interactionStyle.getInsertion() == null))
+            return formattedTextToText(text).copy();
+
+        MutableComponent ret = Component.empty();
+        text.visit((style, string) -> {
+            ret.append(Component.literal(string).withStyle(copyMissingInteraction(style, interactionStyle)));
+            return Optional.empty();
+        }, Style.EMPTY);
+        return ret;
+    }
+
+    private static Style copyMissingInteraction(Style target, Style source) {
+        if (target.getClickEvent() == null && source.getClickEvent() != null)
+            target = target.withClickEvent(source.getClickEvent());
+        if (target.getHoverEvent() == null && source.getHoverEvent() != null)
+            target = target.withHoverEvent(source.getHoverEvent());
+        if (target.getInsertion() == null && source.getInsertion() != null)
+            target = target.withInsertion(source.getInsertion());
+        return target;
+    }
+
+    public static Component replaceNamePlaceholders(FormattedText text, Component name) {
+        return replaceNamePlaceholders(text, name, null);
+    }
+
+    public static Component replaceNamePlaceholders(FormattedText text, Component name, Component health) {
+        Component ret = replaceInText(text, "\\$\\{name\\}|%n|%u", name);
+        if (health != null)
+            ret = replaceInText(ret, "%h", health);
+        return ret;
+    }
+
+    private enum ReplacementMode {
+        INHERIT_STYLE,
+        COPY_INTERACTION
     }
 
     public static Component trimToWidthEllipsis(Font font, Component text, int width, Component ellipsis) {

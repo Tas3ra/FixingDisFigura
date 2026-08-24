@@ -168,7 +168,13 @@ public class Configs {
             PREVIEW_HEAD_ROTATION = new ConfigType.BoolConfig("preview_head_rotation", UI, false),
             AVATAR_PORTRAIT = new ConfigType.BoolConfig("avatar_portrait", UI, true),
             WARDROBE_FILE_NAMES = new ConfigType.BoolConfig("wardrobe_file_names", UI, false);
+    public static final ConfigType.KeybindConfig
+            HEAD_POPUP_BUTTON = new ConfigType.KeybindConfig("head_popup_button", UI, "key.keyboard.g");
+    public static final ConfigType.EnumConfig
+            HEAD_POPUP_TRIGGER = new ConfigType.EnumConfig("head_popup_trigger", UI, 0, 5),
+            HEAD_POPUP_CURSOR = new ConfigType.EnumConfig("head_popup_cursor", UI, 1, 2);
     public static final ConfigType.FloatConfig
+            HEAD_POPUP_Y_OFFSET = new ConfigType.FloatConfig("head_popup_y_offset", UI, 0f),
             BACKGROUND_SCROLL_SPEED = new ConfigType.FloatConfig("background_scroll_speed", UI, 1f);
     public static final ConfigType.PositiveFloatConfig
             POPUP_SCALE = new ConfigType.PositiveFloatConfig("popup_scale", UI, 1f),

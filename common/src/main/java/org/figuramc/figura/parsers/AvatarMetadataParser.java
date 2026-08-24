@@ -2,7 +2,9 @@ package org.figuramc.figura.parsers;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import net.minecraft.nbt.*;
 
@@ -15,7 +17,6 @@ import org.figuramc.figura.utils.Version;
 
 import java.io.IOException;
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
 
 // parses a metadata json
@@ -40,8 +41,9 @@ public class AvatarMetadataParser {
         // nbt
         CompoundTag nbt = new CompoundTag();
         JsonElement jsonElement = JsonParser.parseString(json);
-        if (jsonElement != null && !jsonElement.isJsonNull() && !jsonElement.getAsJsonObject().asMap().isEmpty()) {
-            for (Map.Entry<String, JsonElement> jsonElementEntry : jsonElement.getAsJsonObject().entrySet()) {
+        JsonObject jsonObject = jsonElement != null && jsonElement.isJsonObject() ? jsonElement.getAsJsonObject() : null;
+        if (jsonObject != null && !jsonObject.asMap().isEmpty()) {
+            for (Map.Entry<String, JsonElement> jsonElementEntry : jsonObject.entrySet()) {
                 if (jsonElementEntry.getKey() != null && !jsonElementEntry.getKey().isBlank() && jsonElementEntry.getKey().contains("badge_color_")) {
                     nbt.putString(jsonElementEntry.getKey(), jsonElementEntry.getValue().getAsString());
                 }
@@ -89,6 +91,10 @@ public class AvatarMetadataParser {
             }
             nbt.put("autoScripts", autoScripts);
         }
+
+        ListTag popupControls = parsePopupControls(jsonObject);
+        if (!popupControls.isEmpty())
+            nbt.put("popupControls", popupControls);
 
         if (Configs.FORMAT_SCRIPT.value >= 2)
             nbt.putBoolean("minify", true);
@@ -152,18 +158,16 @@ public class AvatarMetadataParser {
             return;
         }
         if (customization.primaryRenderType != null) {
-            try {
-                modelPart.putString("primary", FiguraRenderTypes.valueOf(customization.primaryRenderType.toUpperCase(Locale.US)).name());
-            } catch (Exception ignored) {
+            FiguraRenderTypes renderType = FiguraRenderTypes.byName(customization.primaryRenderType);
+            if (renderType == null)
                 throw new IOException("Invalid render type \"" + customization.primaryRenderType + "\"!");
-            }
+            modelPart.putString("primary", renderType.name());
         }
         if (customization.secondaryRenderType != null) {
-            try {
-                modelPart.putString("secondary", FiguraRenderTypes.valueOf(customization.secondaryRenderType.toUpperCase(Locale.US)).name());
-            } catch (Exception ignored) {
+            FiguraRenderTypes renderType = FiguraRenderTypes.byName(customization.secondaryRenderType);
+            if (renderType == null)
                 throw new IOException("Invalid render type \"" + customization.secondaryRenderType + "\"!");
-            }
+            modelPart.putString("secondary", renderType.name());
         }
         if (customization.parentType != null) {
             ParentType type = ParentType.get(customization.parentType);
@@ -226,6 +230,55 @@ public class AvatarMetadataParser {
                 return value;
         }
         return null;
+    }
+
+    private static ListTag parsePopupControls(JsonObject jsonObject) {
+        ListTag list = new ListTag();
+        if (jsonObject == null)
+            return list;
+
+        JsonElement element = jsonObject.has("popupControls") ? jsonObject.get("popupControls") : jsonObject.get("popup_controls");
+        if (element == null || !element.isJsonArray())
+            return list;
+
+        JsonArray controls = element.getAsJsonArray();
+        for (JsonElement entry : controls) {
+            if (entry == null || !entry.isJsonObject())
+                continue;
+
+            JsonObject control = entry.getAsJsonObject();
+            String id = getJsonString(control, "id");
+            if (id == null || id.isBlank())
+                continue;
+
+            CompoundTag tag = new CompoundTag();
+            tag.putString("id", id.trim());
+            tag.putString("type", firstNonBlank(getJsonString(control, "type"), "toggle"));
+
+            String title = getJsonString(control, "title");
+            if (title != null && !title.isBlank())
+                tag.putString("title", title.trim());
+
+            putJsonValueAsString(control, tag, "default");
+            putJsonValueAsString(control, tag, "min");
+            putJsonValueAsString(control, tag, "max");
+            putJsonValueAsString(control, tag, "step");
+            putJsonValueAsString(control, tag, "target");
+            list.add(tag);
+        }
+
+        return list;
+    }
+
+    private static void putJsonValueAsString(JsonObject source, CompoundTag target, String key) {
+        JsonElement element = source.get(key);
+        if (element != null && element.isJsonPrimitive())
+            target.putString(key, element.getAsString());
+    }
+
+    private static String getJsonString(JsonObject object, String key) {
+        JsonElement element = object.get(key);
+        return element != null && element.isJsonPrimitive() ? element.getAsString() : null;
     }
 
 

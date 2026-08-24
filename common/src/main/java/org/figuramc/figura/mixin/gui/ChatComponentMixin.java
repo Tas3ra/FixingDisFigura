@@ -130,7 +130,7 @@ public class ChatComponentMixin {
                     TextUtils.collapseLineSeparators(custom.getJson().copy()) : playerName;
 
             // name
-            replacement = TextUtils.replaceInText(replacement, "\\$\\{name\\}", playerName);
+            replacement = TextUtils.replaceNamePlaceholders(replacement, playerName);
 
             // badges
             Component emptyReplacement = Badges.appendBadges(replacement, uuid, config > 1 && owner == null);
@@ -140,7 +140,7 @@ public class ChatComponentMixin {
 
             // modify message
             String quotedName = "(?i)\\b" + Pattern.quote(name) + "\\b";
-            message = TextUtils.replaceInText(message, quotedName, emptyReplacement, (s, style) -> true, isOwner ? 1 : 0, Integer.MAX_VALUE);
+            message = TextUtils.replaceInTextPreservingInteraction(message, quotedName, emptyReplacement, (s, style) -> true, isOwner ? 1 : 0, Integer.MAX_VALUE);
 
             // sender badges
             if (isOwner) {
@@ -149,7 +149,7 @@ public class ChatComponentMixin {
                 // trim
                 temp = TextUtils.trim(temp);
                 // modify message, only first
-                message = TextUtils.replaceInText(message, quotedName, temp, (s, style) -> true, 1);
+                message = TextUtils.replaceInTextPreservingInteraction(message, quotedName, temp, (s, style) -> true, 0, 1);
             }
         }
 

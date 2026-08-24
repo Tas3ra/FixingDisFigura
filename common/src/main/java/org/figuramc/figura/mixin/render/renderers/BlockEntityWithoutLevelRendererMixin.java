@@ -12,6 +12,7 @@ import org.figuramc.figura.ducks.PlayerHeadRenderInfoExtension;
 import org.figuramc.figura.ducks.SkullBlockRendererAccessor;
 import org.figuramc.figura.ducks.SkullBlockRendererHelper;
 import org.figuramc.figura.ducks.SkullSpecialRendererExtension;
+import org.figuramc.figura.gui.ViewerVisibilityManager;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -42,7 +43,7 @@ public class BlockEntityWithoutLevelRendererMixin implements SkullSpecialRendere
         if (itemStack != null) {
             SkullBlockRendererAccessor.setItem(itemStack);
             Avatar itemAvatar = AvatarManager.getAvatarForItem(itemStack);
-            if (itemAvatar != null)
+            if (itemAvatar != null && ViewerVisibilityManager.areCustomSkullsVisible(itemAvatar.owner))
                 SkullBlockRendererHelper.setAvatar(itemAvatar);
         }
         if (SkullBlockRendererAccessor.getRenderMode() == SkullBlockRendererAccessor.SkullRenderMode.OTHER && itemDisplayContext == ItemDisplayContext.GUI)

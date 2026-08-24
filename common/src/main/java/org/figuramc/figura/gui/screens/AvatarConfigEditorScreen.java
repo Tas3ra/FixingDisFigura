@@ -24,6 +24,8 @@ import org.figuramc.figura.gui.widgets.ScrollBarWidget;
 import org.figuramc.figura.gui.widgets.SwitchButton;
 import org.figuramc.figura.gui.widgets.TextField;
 import org.figuramc.figura.gui.widgets.FiguraWidget;
+import org.figuramc.figura.lua.api.popup.PopupAPI;
+import org.figuramc.figura.lua.api.popup.PopupInput;
 import org.figuramc.figura.utils.FiguraText;
 import org.figuramc.figura.utils.IOUtils;
 import org.figuramc.figura.utils.TextUtils;
@@ -35,6 +37,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 public class AvatarConfigEditorScreen extends AbstractPanelScreen {
@@ -42,8 +45,10 @@ public class AvatarConfigEditorScreen extends AbstractPanelScreen {
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().setPrettyPrinting().create();
     private static final int FIELD_HEIGHT = 20;
     private static final int SCRIPT_ROW_HEIGHT = 22;
+    private static final int POPUP_ROW_HEIGHT = 120;
 
     private final List<SwitchButton> scriptButtons = new ArrayList<>();
+    private final List<PopupControlSlot> popupControlSlots = new ArrayList<>();
     private final Set<String> selectedAutoScripts = new LinkedHashSet<>();
     private List<String> availableScripts = List.of();
 
@@ -66,6 +71,7 @@ public class AvatarConfigEditorScreen extends AbstractPanelScreen {
     private int scriptRows;
     private boolean dirty;
     private boolean autoScriptsTouched;
+    private boolean popupControlsTouched;
 
     public AvatarConfigEditorScreen(Screen parentScreen) {
         super(parentScreen, FiguraText.of("gui.panels.title.avatar_config"));
@@ -140,6 +146,19 @@ public class AvatarConfigEditorScreen extends AbstractPanelScreen {
             form.addContent(button);
         }
         form.setContentHeight(y + scriptRows * SCRIPT_ROW_HEIGHT);
+        y += scriptRows * SCRIPT_ROW_HEIGHT + 12;
+
+        popupControlSlots.clear();
+        form.addContent(new Label(FiguraText.of("gui.avatar_config.popup_controls"), x, y + 5, 118, false, TextUtils.Alignment.LEFT));
+        y += 24;
+
+        List<PopupControlConfig> popupControls = readPopupControlConfigs();
+        for (int i = 0; i < PopupAPI.MAX_CONTROLS; i++) {
+            PopupControlConfig config = i < popupControls.size() ? popupControls.get(i) : new PopupControlConfig();
+            PopupControlSlot slot = new PopupControlSlot(i + 1, x, y + i * POPUP_ROW_HEIGHT, formWidth - 16, config);
+            popupControlSlots.add(slot);
+        }
+        form.setContentHeight(y + PopupAPI.MAX_CONTROLS * POPUP_ROW_HEIGHT + 4);
 
         addRenderableWidget(status = new Label(Component.empty(), formX, buttonY - 16, panelWidth - 20, false, TextUtils.Alignment.LEFT));
         addRenderableWidget(new Button(this.width / 2 - 124, buttonY, 120, 20, FiguraText.of("gui.avatar_config.save"), null, button -> saveConfig()));
@@ -149,6 +168,7 @@ public class AvatarConfigEditorScreen extends AbstractPanelScreen {
                 .withStyle(configPath == null ? ChatFormatting.RED : ChatFormatting.GRAY));
         dirty = false;
         autoScriptsTouched = false;
+        popupControlsTouched = false;
         refreshScriptButtons();
     }
 
@@ -236,12 +256,22 @@ public class AvatarConfigEditorScreen extends AbstractPanelScreen {
             if (autoScriptsTouched || metadata.has("autoScripts") || !selectedAutoScripts.isEmpty())
                 putArray(object, "autoScripts", orderedSelectedScripts(), true);
 
+            JsonArray popupControls = collectPopupControls();
+            if (popupControlsTouched || metadata.has("popupControls") || metadata.has("popup_controls") || !popupControls.isEmpty()) {
+                object.remove("popup_controls");
+                if (popupControls.isEmpty())
+                    object.remove("popupControls");
+                else
+                    object.add("popupControls", popupControls);
+            }
+
             Files.createDirectories(configPath.getParent());
             Files.writeString(configPath, GSON.toJson(object) + "\n", StandardCharsets.UTF_8);
 
             metadata = object;
             dirty = false;
             autoScriptsTouched = false;
+            popupControlsTouched = false;
             setStatus(FiguraText.of("gui.avatar_config.saved").withStyle(ChatFormatting.GREEN));
             FiguraToast.sendToast(FiguraText.of("toast.avatar_config.saved"));
             if (avatarFolder != null)
@@ -327,7 +357,62 @@ public class AvatarConfigEditorScreen extends AbstractPanelScreen {
         return ordered;
     }
 
+    private List<PopupControlConfig> readPopupControlConfigs() {
+        List<PopupControlConfig> controls = new ArrayList<>();
+        JsonElement element = metadata.has("popupControls") ? metadata.get("popupControls") : metadata.get("popup_controls");
+        if (element == null || !element.isJsonArray())
+            return controls;
+
+        for (JsonElement child : element.getAsJsonArray()) {
+            if (child == null || !child.isJsonObject())
+                continue;
+
+            JsonObject object = child.getAsJsonObject();
+            String id = getString(object, "id").trim();
+            if (id.isEmpty())
+                continue;
+
+            PopupControlConfig config = new PopupControlConfig();
+            config.enabled = true;
+            config.type = switch (getString(object, "type").trim().toLowerCase(Locale.US)) {
+                case "slider" -> PopupInput.Type.SLIDER;
+                case "button" -> PopupInput.Type.BUTTON;
+                default -> PopupInput.Type.TOGGLE;
+            };
+            config.id = id;
+            config.title = getString(object, "title");
+            config.target = PopupInput.Target.byName(getString(object, "target"));
+            config.defaultValue = getPrimitiveString(object, "default");
+            config.min = getPrimitiveString(object, "min");
+            config.max = getPrimitiveString(object, "max");
+            config.step = getPrimitiveString(object, "step");
+            config.headName = getPrimitiveString(object, "headName");
+            if (config.headName.isBlank())
+                config.headName = getPrimitiveString(object, "head_name");
+            config.synced = parseBoolean(getPrimitiveString(object, "synced"));
+            controls.add(config);
+            if (controls.size() >= PopupAPI.MAX_CONTROLS)
+                break;
+        }
+        return controls;
+    }
+
+    private JsonArray collectPopupControls() {
+        JsonArray array = new JsonArray();
+        for (PopupControlSlot slot : popupControlSlots) {
+            JsonObject object = slot.toJson();
+            if (object != null)
+                array.add(object);
+        }
+        return array;
+    }
+
     private static String getString(JsonObject object, String key) {
+        JsonElement element = object.get(key);
+        return element != null && element.isJsonPrimitive() ? element.getAsString() : "";
+    }
+
+    private static String getPrimitiveString(JsonObject object, String key) {
         JsonElement element = object.get(key);
         return element != null && element.isJsonPrimitive() ? element.getAsString() : "";
     }
@@ -387,6 +472,35 @@ public class AvatarConfigEditorScreen extends AbstractPanelScreen {
         String clean = value == null ? "" : value.trim();
         if (!clean.isEmpty() && !values.contains(clean))
             values.add(clean);
+    }
+
+    private static void putOptionalString(JsonObject object, String key, String value) {
+        String clean = value == null ? "" : value.trim();
+        if (!clean.isEmpty())
+            object.addProperty(key, clean);
+    }
+
+    private static void putOptionalNumber(JsonObject object, String key, String value) {
+        String clean = value == null ? "" : value.trim();
+        if (clean.isEmpty())
+            return;
+
+        try {
+            double parsed = Double.parseDouble(clean);
+            if (Double.isFinite(parsed))
+                object.addProperty(key, parsed);
+        } catch (NumberFormatException ignored) {
+        }
+    }
+
+    private static boolean parseBoolean(String value) {
+        if (value == null)
+            return false;
+
+        return switch (value.trim().toLowerCase(Locale.US)) {
+            case "true", "1", "yes", "on" -> true;
+            default -> false;
+        };
     }
 
     private void markDirty() {
@@ -510,6 +624,193 @@ public class AvatarConfigEditorScreen extends AbstractPanelScreen {
                 this.x = x;
                 this.y = y;
             }
+        }
+    }
+
+    private static class PopupControlConfig {
+        private boolean enabled;
+        private PopupInput.Type type = PopupInput.Type.TOGGLE;
+        private PopupInput.Target target = PopupInput.Target.PLAYER;
+        private String id = "";
+        private String title = "";
+        private String defaultValue = "";
+        private String min = "";
+        private String max = "";
+        private String step = "";
+        private String headName = "";
+        private boolean synced;
+    }
+
+    private class PopupControlSlot {
+        private final SwitchButton enabledButton;
+        private final Button typeButton;
+        private final Button targetButton;
+        private final SwitchButton syncedButton;
+        private final TextField idField;
+        private final TextField titleField;
+        private final TextField defaultField;
+        private final TextField minField;
+        private final TextField maxField;
+        private final TextField stepField;
+        private final TextField headNameField;
+        private PopupInput.Type type;
+        private PopupInput.Target target;
+
+        private PopupControlSlot(int slot, int x, int y, int width, PopupControlConfig config) {
+            int clampedWidth = Math.max(220, width);
+            this.type = config.type == null ? PopupInput.Type.TOGGLE : config.type;
+            this.target = config.target == null ? PopupInput.Target.PLAYER : config.target;
+
+            enabledButton = new SwitchButton(x, y, Math.min(96, clampedWidth / 4), 20, FiguraText.of("gui.avatar_config.popup_control", slot), config.enabled) {
+                @Override
+                public void onPress(InputWithModifiers inputWithModifiers) {
+                    super.onPress(inputWithModifiers);
+                    refreshEnabled();
+                    touch();
+                }
+            };
+            enabledButton.setUnderline(false);
+            form.addContent(enabledButton);
+
+            int typeX = x + enabledButton.getWidth() + 4;
+            typeButton = form.addContent(new Button(typeX, y, 72, 20, Component.empty(), null, button -> {
+                cycleType();
+                refreshType();
+                touch();
+            }));
+
+            int targetX = typeX + typeButton.getWidth() + 4;
+            int syncWidth = 56;
+            int targetWidth = Math.min(86, Math.max(54, clampedWidth - targetX + x - syncWidth - 4));
+            targetButton = form.addContent(new Button(targetX, y, targetWidth, 20, Component.empty(), null, button -> {
+                cycleTarget();
+                refreshTarget();
+                touch();
+            }));
+
+            int syncX = targetX + targetButton.getWidth() + 4;
+            syncedButton = new SwitchButton(syncX, y, Math.max(44, clampedWidth - syncX + x), 20, FiguraText.of("gui.avatar_config.popup_synced"), config.synced) {
+                @Override
+                public void onPress(InputWithModifiers inputWithModifiers) {
+                    super.onPress(inputWithModifiers);
+                    touch();
+                }
+            };
+            syncedButton.setUnderline(false);
+            form.addContent(syncedButton);
+
+            form.addContent(new Label(FiguraText.of("gui.avatar_config.popup_id"), x, y + 24, 36, false, TextUtils.Alignment.LEFT));
+            idField = form.addContent(new TextField(x + 38, y + 20, Math.max(48, clampedWidth - 38), FIELD_HEIGHT, TextField.HintType.NAME, ignored -> touch()));
+            idField.getField().setMaxLength(PopupAPI.MAX_ID_LENGTH);
+            idField.getField().setValue(config.id);
+
+            form.addContent(new Label(FiguraText.of("gui.avatar_config.popup_title"), x, y + 48, 40, false, TextUtils.Alignment.LEFT));
+            titleField = form.addContent(new TextField(x + 42, y + 44, Math.max(64, clampedWidth - 42), FIELD_HEIGHT, TextField.HintType.ANY, ignored -> touch()));
+            titleField.getField().setMaxLength(PopupAPI.MAX_TITLE_LENGTH);
+            titleField.getField().setValue(config.title);
+
+            form.addContent(new Label(FiguraText.of("gui.avatar_config.popup_head_name"), x, y + 72, 40, false, TextUtils.Alignment.LEFT));
+            headNameField = form.addContent(new TextField(x + 42, y + 68, Math.max(64, clampedWidth - 42), FIELD_HEIGHT, TextField.HintType.ANY, ignored -> touch()));
+            headNameField.getField().setMaxLength(PopupAPI.MAX_TITLE_LENGTH);
+            headNameField.getField().setValue(config.headName);
+
+            int numericY = y + 92;
+            int columnWidth = Math.max(50, (clampedWidth - 12) / 4);
+            defaultField = addPopupValueField(x, numericY, columnWidth, FiguraText.of("gui.avatar_config.popup_default"), config.defaultValue);
+            minField = addPopupValueField(x + columnWidth + 4, numericY, columnWidth, FiguraText.of("gui.avatar_config.popup_min"), config.min);
+            maxField = addPopupValueField(x + (columnWidth + 4) * 2, numericY, columnWidth, FiguraText.of("gui.avatar_config.popup_max"), config.max);
+            stepField = addPopupValueField(x + (columnWidth + 4) * 3, numericY, Math.max(50, clampedWidth - (columnWidth + 4) * 3), FiguraText.of("gui.avatar_config.popup_step"), config.step);
+
+            refreshType();
+            refreshTarget();
+            refreshEnabled();
+        }
+
+        private void cycleType() {
+            type = switch (type) {
+                case TOGGLE -> PopupInput.Type.SLIDER;
+                case SLIDER -> PopupInput.Type.BUTTON;
+                case BUTTON -> PopupInput.Type.TOGGLE;
+            };
+        }
+
+        private void cycleTarget() {
+            PopupInput.Target[] targets = PopupInput.Target.values();
+            target = targets[(target.ordinal() + 1) % targets.length];
+        }
+
+        private TextField addPopupValueField(int x, int y, int width, Component label, String value) {
+            int labelWidth = Math.min(42, Math.max(24, width / 2));
+            form.addContent(new Label(label, x, y + 4, labelWidth, false, TextUtils.Alignment.LEFT));
+            TextField field = form.addContent(new TextField(x + labelWidth, y, Math.max(24, width - labelWidth), FIELD_HEIGHT, TextField.HintType.ANY, ignored -> touch()));
+            field.getField().setValue(value);
+            return field;
+        }
+
+        private void refreshType() {
+            typeButton.setMessage(FiguraText.of("gui.avatar_config.popup_type_" + type.name().toLowerCase(Locale.US)));
+            boolean slider = type == PopupInput.Type.SLIDER;
+            boolean button = type == PopupInput.Type.BUTTON;
+            defaultField.setEnabled(!button);
+            minField.setEnabled(slider);
+            maxField.setEnabled(slider);
+            stepField.setEnabled(slider);
+        }
+
+        private void refreshTarget() {
+            targetButton.setMessage(FiguraText.of("gui.avatar_config.popup_target_" + target.name().toLowerCase(Locale.US)));
+            headNameField.setEnabled(enabledButton.isToggled() && target == PopupInput.Target.HEAD);
+        }
+
+        private void refreshEnabled() {
+            boolean enabled = enabledButton.isToggled();
+            boolean slider = type == PopupInput.Type.SLIDER;
+            boolean button = type == PopupInput.Type.BUTTON;
+            typeButton.setActive(enabled);
+            targetButton.setActive(enabled);
+            syncedButton.setActive(enabled);
+            idField.setEnabled(enabled);
+            titleField.setEnabled(enabled);
+            headNameField.setEnabled(enabled && target == PopupInput.Target.HEAD);
+            defaultField.setEnabled(enabled && !button);
+            minField.setEnabled(enabled && slider);
+            maxField.setEnabled(enabled && slider);
+            stepField.setEnabled(enabled && slider);
+        }
+
+        private JsonObject toJson() {
+            if (!enabledButton.isToggled())
+                return null;
+
+            String id = idField.getField().getValue().trim();
+            if (id.isEmpty())
+                return null;
+
+            JsonObject object = new JsonObject();
+            object.addProperty("id", id);
+            object.addProperty("type", type.name().toLowerCase(Locale.US));
+            object.addProperty("target", target.name().toLowerCase(Locale.US));
+            if (syncedButton.isToggled())
+                object.addProperty("synced", true);
+            putOptionalString(object, "title", titleField.getField().getValue());
+            putOptionalString(object, "headName", headNameField.getField().getValue());
+
+            String defaultValue = defaultField.getField().getValue();
+            if (type == PopupInput.Type.SLIDER) {
+                putOptionalNumber(object, "default", defaultValue);
+                putOptionalNumber(object, "min", minField.getField().getValue());
+                putOptionalNumber(object, "max", maxField.getField().getValue());
+                putOptionalNumber(object, "step", stepField.getField().getValue());
+            } else if (type == PopupInput.Type.TOGGLE && defaultValue != null && !defaultValue.isBlank()) {
+                object.addProperty("default", parseBoolean(defaultValue));
+            }
+
+            return object;
+        }
+
+        private void touch() {
+            popupControlsTouched = true;
+            markDirty();
         }
     }
 }

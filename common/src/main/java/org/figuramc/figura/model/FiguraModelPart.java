@@ -16,7 +16,7 @@ import org.figuramc.figura.math.vector.FiguraVec3;
 import org.figuramc.figura.model.rendering.FiguraRenderer;
 import org.figuramc.figura.model.rendering.ImmediateFiguraRenderer;
 import org.figuramc.figura.model.rendering.Vertex;
-import org.figuramc.figura.model.rendering.texture.FiguraRenderTypes;
+import org.figuramc.figura.model.rendering.texture.FiguraRenderLayer;
 import org.figuramc.figura.model.rendering.texture.FiguraTexture;
 import org.figuramc.figura.model.rendering.texture.FiguraTextureSet;
 import org.figuramc.figura.model.rendertasks.*;
@@ -662,14 +662,14 @@ public class FiguraModelPart implements Comparable<FiguraModelPart> {
     @LuaWhitelist
     @LuaMethodDoc("model_part.get_primary_render_type")
     public String getPrimaryRenderType() {
-        FiguraRenderTypes renderType = this.customization.getPrimaryRenderType();
+        FiguraRenderLayer renderType = this.customization.getPrimaryRenderType();
         return renderType == null ? null : renderType.name();
     }
 
     @LuaWhitelist
     @LuaMethodDoc("model_part.get_secondary_render_type")
     public String getSecondaryRenderType() {
-        FiguraRenderTypes renderType = this.customization.getSecondaryRenderType();
+        FiguraRenderLayer renderType = this.customization.getSecondaryRenderType();
         return renderType == null ? null : renderType.name();
     }
 
@@ -683,12 +683,12 @@ public class FiguraModelPart implements Comparable<FiguraModelPart> {
             value = "model_part.set_primary_render_type"
     )
     public FiguraModelPart setPrimaryRenderType(String type) {
-        try {
-            this.customization.setPrimaryRenderType(type == null ? null : FiguraRenderTypes.valueOf(type.toUpperCase(Locale.US)));
-            return this;
-        } catch (Exception ignored) {
+        FiguraRenderLayer renderType = type == null ? null : owner.renderTypes.resolve(type);
+        if (type != null && renderType == null)
             throw new LuaError("Illegal RenderType: \"" + type + "\".");
-        }
+
+        this.customization.setPrimaryRenderType(renderType);
+        return this;
     }
 
     @LuaWhitelist
@@ -701,12 +701,12 @@ public class FiguraModelPart implements Comparable<FiguraModelPart> {
             value = "model_part.set_secondary_render_type"
     )
     public FiguraModelPart setSecondaryRenderType(String type) {
-        try {
-            this.customization.setSecondaryRenderType(type == null ? null : FiguraRenderTypes.valueOf(type.toUpperCase(Locale.US)));
-            return this;
-        } catch (Exception ignored) {
+        FiguraRenderLayer renderType = type == null ? null : owner.renderTypes.resolve(type);
+        if (type != null && renderType == null)
             throw new LuaError("Illegal RenderType: \"" + type + "\".");
-        }
+
+        this.customization.setSecondaryRenderType(renderType);
+        return this;
     }
 
     @LuaWhitelist
@@ -1148,11 +1148,13 @@ public class FiguraModelPart implements Comparable<FiguraModelPart> {
     public FiguraModelPart setLight(Object light, Double skyLight) {
         if (light == null) {
             this.customization.light = null;
+            this.customization.lightOverride = false;
             return this;
         }
 
         FiguraVec2 lightVec = LuaUtils.parseVec2("setLight", light, skyLight);
         this.customization.light = LightTexture.pack((int) lightVec.x, (int) lightVec.y);
+        this.customization.lightOverride = true;
         return this;
     }
 

@@ -16,6 +16,7 @@ import org.figuramc.figura.avatar.AvatarManager;
 import org.figuramc.figura.ducks.PlayerHeadRenderInfoExtension;
 import org.figuramc.figura.ducks.SkullBlockRendererAccessor;
 import org.figuramc.figura.ducks.SkullBlockRendererHelper;
+import org.figuramc.figura.gui.ViewerVisibilityManager;
 import org.figuramc.figura.model.rendering.EntityRenderMode;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -42,6 +43,8 @@ public abstract class PlayerHeadSpecialRendererMixin {
         Avatar avatar = AvatarManager.getAvatarForProfile(profile);
         if (avatar == null && original.gameProfile() != null && original.gameProfile().id() != null)
             avatar = AvatarManager.getAvatarForPlayer(original.gameProfile().id());
+        if (avatar != null && !ViewerVisibilityManager.areCustomSkullsVisible(avatar.owner))
+            avatar = null;
         PlayerHeadRenderInfoExtension extension = (PlayerHeadRenderInfoExtension)(Object)original;
         extension.figura$setAvatar(avatar);
         extension.figura$setItemStack(itemStack);
@@ -77,6 +80,8 @@ public abstract class PlayerHeadSpecialRendererMixin {
         Avatar avatar = itemStack != null ? AvatarManager.getAvatarForItem(itemStack) : extension.figura$getAvatar();
         if (avatar == null && playerHeadRenderInfo.gameProfile() != null && playerHeadRenderInfo.gameProfile().id() != null)
             avatar = AvatarManager.getAvatarForPlayer(playerHeadRenderInfo.gameProfile().id());
+        if (avatar != null && !ViewerVisibilityManager.areCustomSkullsVisible(avatar.owner))
+            avatar = null;
 
         SkullBlockRendererHelper.setAvatar(avatar);
         figura$restoreRenderContext(itemStack, contextEntity, contextMode, contextEntityRenderMode);

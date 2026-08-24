@@ -15,6 +15,7 @@ import org.figuramc.figura.lua.api.nameplate.NameplateAPI;
 import org.figuramc.figura.lua.api.net.NetworkingAPI;
 import org.figuramc.figura.lua.api.particle.ParticleAPI;
 import org.figuramc.figura.lua.api.ping.PingAPI;
+import org.figuramc.figura.lua.api.popup.PopupAPI;
 import org.figuramc.figura.lua.api.sound.SoundAPI;
 import org.figuramc.figura.lua.api.vanilla_model.VanillaModelAPI;
 import org.figuramc.figura.lua.api.world.WorldAPI;
@@ -73,6 +74,8 @@ public abstract class FiguraGlobalsDocs {
     public SoundAPI sounds;
     @LuaFieldDoc("globals.renderer")
     public RendererAPI renderer;
+    @LuaFieldDoc("globals.popup")
+    public PopupAPI popup;
     @LuaFieldDoc("globals.user")
     public EntityAPI<?> user;
     @LuaFieldDoc("globals.pings")

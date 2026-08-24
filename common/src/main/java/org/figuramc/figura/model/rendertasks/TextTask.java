@@ -21,7 +21,7 @@ import org.figuramc.figura.math.vector.FiguraVec3;
 import org.figuramc.figura.math.vector.FiguraVec4;
 import org.figuramc.figura.model.FiguraModelPart;
 import org.figuramc.figura.model.PartCustomization;
-import org.figuramc.figura.model.rendering.texture.FiguraRenderTypes;
+import org.figuramc.figura.model.rendering.texture.FiguraRenderLayer;
 import org.figuramc.figura.utils.ColorUtils;
 import org.figuramc.figura.utils.LuaUtils;
 import org.figuramc.figura.utils.TextRenderUtils;
@@ -58,7 +58,7 @@ public class TextTask extends RenderTask {
     @Override
     public void render(PartCustomization.PartCustomizationStack stack, MultiBufferSource buffer, int light, int overlay) {
         customization.recalculate();
-        FiguraRenderTypes parentPrimaryRenderType = stack.peek().getPrimaryRenderType();
+        FiguraRenderLayer parentPrimaryRenderType = stack.peek().getPrimaryRenderType();
         boolean inheritFullBright = customization.light == null && parentPrimaryRenderType != null && parentPrimaryRenderType.isFullBright();
 
         stack.push(customization);

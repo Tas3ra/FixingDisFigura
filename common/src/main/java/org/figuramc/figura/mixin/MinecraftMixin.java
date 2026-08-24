@@ -75,6 +75,14 @@ public abstract class MinecraftMixin {
         if (Configs.WARDROBE_BUTTON.keyBind.consumeClick())
             this.setScreen(new WardrobeScreen(null));
 
+        // direct head popup button
+        if (Configs.HEAD_POPUP_TRIGGER.value == 0 && Configs.HEAD_POPUP_BUTTON.keyBind.consumeClick()) {
+            if (PopupMenu.isPanelOpen())
+                PopupMenu.close();
+            else
+                PopupMenu.openHeadControlsFromLook();
+        }
+
         // action wheel button
         Boolean wheel = null;
         if (Configs.ACTION_WHEEL_MODE.value % 2 == 1) {
@@ -99,7 +107,7 @@ public abstract class MinecraftMixin {
 
         // popup menu button
         boolean popupButtonDown = Configs.POPUP_BUTTON.keyBind.isDown();
-        if (PopupMenu.isVolumePanelOpen()) {
+        if (PopupMenu.isPanelOpen()) {
             if (popupButtonDown && !figura$popupButtonWasDown)
                 PopupMenu.close();
         } else if (popupButtonDown && (!figura$popupButtonWasDown || PopupMenu.isEnabled())) {
@@ -107,7 +115,7 @@ public abstract class MinecraftMixin {
 
             if (!PopupMenu.hasEntity())
                 figura$findPopupTarget();
-        } else if (PopupMenu.isEnabled() && !PopupMenu.isVolumePanelOpen()) {
+        } else if (PopupMenu.isEnabled() && !PopupMenu.isPanelOpen()) {
             PopupMenu.run();
         }
         figura$popupButtonWasDown = popupButtonDown;

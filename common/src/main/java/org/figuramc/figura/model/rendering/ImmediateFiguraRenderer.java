@@ -21,6 +21,7 @@ import org.figuramc.figura.math.vector.FiguraVec3;
 import org.figuramc.figura.math.vector.FiguraVec4;
 import org.figuramc.figura.model.*;
 import org.figuramc.figura.model.rendering.texture.FiguraRenderTypes;
+import org.figuramc.figura.model.rendering.texture.FiguraRenderLayer;
 import org.figuramc.figura.model.rendering.texture.FiguraTexture;
 import org.figuramc.figura.model.rendering.texture.FiguraTextureSet;
 import org.figuramc.figura.model.rendertasks.RenderTask;
@@ -36,7 +37,6 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
     protected final PartCustomization.PartCustomizationStack customizationStack = new PartCustomization.PartCustomizationStack();
 
     public static final FiguraMat4 CAMERA_POS_TO_WORLD_MATRIX = FiguraMat4.of();
-    public static final FiguraMat4 CAMERA_VIEW_TO_WORLD_MATRIX = FiguraMat4.of();
 
     protected static final VertexBuffer VERTEX_BUFFER = new VertexBuffer();
 
@@ -83,7 +83,6 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
 
             // world matrices
             CAMERA_POS_TO_WORLD_MATRIX.set(FiguraRenderer.worldToCameraPosMatrix().invert());
-            CAMERA_VIEW_TO_WORLD_MATRIX.set(FiguraRenderer.viewToWorldMatrix());
 
             // calculate each part matrices
             calculatePartMatrices(root, currentFilterScheme.initialValue);
@@ -160,7 +159,6 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
             // world matrices
             if (allowMatrixUpdate) {
                 CAMERA_POS_TO_WORLD_MATRIX.set(FiguraRenderer.worldToCameraPosMatrix().invert());
-                CAMERA_VIEW_TO_WORLD_MATRIX.set(FiguraRenderer.viewToWorldMatrix());
             }
 
             // complexity
@@ -348,17 +346,15 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
             // recalculate light
             FiguraMod.popPushProfiler("calculateLight");
             Level l;
-            if (!renderThisPart) {
+            PartCustomization current = customizationStack.peek();
+            if (current.lightOverride) {
                 updateLight = false;
             }
-            else if (custom.light != null) {
-                updateLight = false;
-            }
-            else if (updateLight && (l = Minecraft.getInstance().level) != null) {
+            else if (renderThisPart && updateLight && (l = Minecraft.getInstance().level) != null) {
                 FiguraVec3 pos = part.savedPartToWorldMat.apply(0d, 0d, 0d);
-                int block = l.getBrightness(LightLayer.BLOCK, pos.asBlockPos());
-                int sky = l.getBrightness(LightLayer.SKY, pos.asBlockPos());
-                customizationStack.peek().light = LightTexture.pack(block, sky);
+                if (Double.isFinite(pos.x) && Double.isFinite(pos.y) && Double.isFinite(pos.z)) {
+                    current.light = samplePartLight(l, pos);
+                }
             }
         }
 
@@ -463,6 +459,22 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
         FiguraMod.popProfiler(2);
 
         return !breakRender;
+    }
+
+    private int samplePartLight(Level level, FiguraVec3 pos) {
+        var blockPos = pos.asBlockPos();
+        int block = level.getBrightness(LightLayer.BLOCK, blockPos);
+        int sky = level.getBrightness(LightLayer.SKY, blockPos);
+        return floorToEntityLight(LightTexture.pack(block, sky));
+    }
+
+    private int floorToEntityLight(int sampledLight) {
+        if (entity == null || (avatar.renderMode != EntityRenderMode.RENDER && avatar.renderMode != EntityRenderMode.FIRST_PERSON))
+            return sampledLight;
+
+        int block = Math.max(LightTexture.block(sampledLight), LightTexture.block(light));
+        int sky = Math.max(LightTexture.sky(sampledLight), LightTexture.sky(light));
+        return LightTexture.pack(block, sky);
     }
 
 
@@ -614,9 +626,10 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
 
     protected FiguraMat4 partToWorldMatrices(PartCustomization cust) {
         FiguraMat4 customizePeek = customizationStack.peek().positionMatrix.copy();
-        // Entity/world poses are camera-position-relative in 1.21.11, while first-person
-        // hand poses are camera/view-space and need the full camera orientation restored.
-        customizePeek.multiply(avatar.renderMode == EntityRenderMode.FIRST_PERSON ? CAMERA_VIEW_TO_WORLD_MATRIX : CAMERA_POS_TO_WORLD_MATRIX);
+        // Entity, world, and first-person hand poses are camera-position-relative in
+        // 1.21.11. The hand pose stack already contains the inverse camera/view
+        // orientation, so partToWorldMatrix only needs to restore camera position.
+        customizePeek.multiply(CAMERA_POS_TO_WORLD_MATRIX);
         FiguraVec3 piv = cust.getPivot().add(cust.getOffsetPivot());
 
         FiguraMat4 translation = FiguraMat4.of();
@@ -769,11 +782,11 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
     }
 
     private VertexData getTexture(PartCustomization customization, FiguraTextureSet textureSet, boolean primary) {
-        FiguraRenderTypes types = primary ? customization.getPrimaryRenderType() : customization.getSecondaryRenderType();
+        FiguraRenderLayer types = primary ? customization.getPrimaryRenderType() : customization.getSecondaryRenderType();
         TextureCustomization texture = primary ? customization.primaryTexture : customization.secondaryTexture;
         VertexData ret = new VertexData();
 
-        if (types == FiguraRenderTypes.NONE)
+        if (types != null && types.baseType() == FiguraRenderTypes.NONE)
             return ret;
 
         // get texture
@@ -810,7 +823,7 @@ public class ImmediateFiguraRenderer extends FiguraRenderer {
             ret.vertexOffset = FiguraMod.VERTEX_OFFSET;
 
         // Switch to cutout with fullbright if the iris emissive fix is enabled
-        if (doIrisEmissiveFix && types == FiguraRenderTypes.EMISSIVE) {
+        if (doIrisEmissiveFix && types.baseType() == FiguraRenderTypes.EMISSIVE) {
             ret.fullBright = true;
             ret.renderType = FiguraRenderTypes.TRANSLUCENT_CULL.get(id);
         } else {

@@ -29,6 +29,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 @Mixin(SoundEngine.class)
 public abstract class SoundEngineMixin implements SoundEngineAccessor {
@@ -47,7 +48,7 @@ public abstract class SoundEngineMixin implements SoundEngineAccessor {
     @Unique
     private ChannelAccess figuraChannel;
     @Unique
-    private final List<LuaSound> figuraHandlers = Collections.synchronizedList(new ArrayList<>());
+    private final Queue<LuaSound> figuraHandlers = new ConcurrentLinkedQueue<>();
 
     @Inject(at = @At("RETURN"), method = "<init>")
     private void soundEngineInit(SoundManager soundManager, Options options, ResourceProvider resourceProvider, CallbackInfo ci) {
@@ -61,17 +62,16 @@ public abstract class SoundEngineMixin implements SoundEngineAccessor {
 
     @Inject(at = @At("RETURN"), method = "tickInGameSound")
     private void tickNonPaused(CallbackInfo ci) {
-        Iterator<LuaSound> iterator = figuraHandlers.iterator();
-        while (iterator.hasNext()) {
-            LuaSound sound = iterator.next();
+        float playersVolume = figura$getVolume(SoundSource.PLAYERS);
+        for (LuaSound sound : figuraHandlers) {
             ChannelAccess.ChannelHandle handle = sound.getHandle();
             if (handle == null) {
-                iterator.remove();
-            } else if (figura$getVolume(SoundSource.PLAYERS) <= 0f) {
+                figuraHandlers.remove(sound);
+            } else if (playersVolume <= 0f) {
                 handle.execute(Channel::stop);
-                iterator.remove();
+                figuraHandlers.remove(sound);
             } else if (handle.isStopped()) {
-                iterator.remove();
+                figuraHandlers.remove(sound);
             }
         }
     }
@@ -117,6 +117,9 @@ public abstract class SoundEngineMixin implements SoundEngineAccessor {
         if (sound.isRelative() || sound.getAttenuation() == Attenuation.NONE || this.listener.getTransform().position().distanceToSqr(pos) < (double)(g * g)){
             // Run sound event
             AvatarManager.executeAll("playSoundEvent", avatar -> {
+                if (!avatar.hasEventHandlers("ON_PLAY_SOUND"))
+                    return;
+
                 boolean cancel = avatar.playSoundEvent(
                     sound.getIdentifier().toString(),
                     FiguraVec3.fromVec3(pos),
@@ -153,13 +156,11 @@ public abstract class SoundEngineMixin implements SoundEngineAccessor {
         if (!this.loaded)
             return;
 
-        Iterator<LuaSound> iterator = figuraHandlers.iterator();
-        while (iterator.hasNext()) {
-            LuaSound sound = iterator.next();
+        for (LuaSound sound : figuraHandlers) {
             ChannelHandleAccessor accessor = (ChannelHandleAccessor) sound.getHandle();
             if (accessor != null && (owner == null || (accessor.getOwner().equals(owner) && (name == null || accessor.getName().equals(name))))) {
                 sound.stop();
-                iterator.remove();
+                figuraHandlers.remove(sound);
             }
         }
     }
@@ -167,9 +168,9 @@ public abstract class SoundEngineMixin implements SoundEngineAccessor {
     @Override @Intrinsic
     public void figura$stopAllSounds() {
         if (this.loaded) {
-            for (LuaSound sound : figuraHandlers)
+            LuaSound sound;
+            while ((sound = figuraHandlers.poll()) != null)
                 sound.stop();
-            figuraHandlers.clear();
             figuraChannel.clear();
         }
     }
@@ -199,7 +200,7 @@ public abstract class SoundEngineMixin implements SoundEngineAccessor {
     public boolean figura$isPlaying(UUID owner) {
         if (!this.loaded)
             return false;
-        for (LuaSound sound : List.copyOf(figuraHandlers)) {
+        for (LuaSound sound : figuraHandlers) {
             ChannelHandleAccessor accessor = (ChannelHandleAccessor) sound.getHandle();
             if (sound.isPlaying() && accessor != null && accessor.getOwner().equals(owner))
                 return true;

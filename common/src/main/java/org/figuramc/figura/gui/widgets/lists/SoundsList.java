@@ -21,6 +21,7 @@ import org.figuramc.figura.utils.FiguraText;
 import org.figuramc.figura.utils.MathUtils;
 import org.figuramc.figura.utils.TextUtils;
 import org.figuramc.figura.utils.ui.UIHelper;
+import org.luaj.vm2.LuaError;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -132,7 +133,12 @@ public class SoundsList extends AbstractList {
                 @Override
                 public void playDownSound(SoundManager soundManager) {
                     Vec3 vec =  Minecraft.getInstance().player == null ? new Vec3(0, 0, 0) : Minecraft.getInstance().player.position();
-                    getSound().pos(vec.x, vec.y, vec.z).play();
+                    try {
+                        getSound().pos(vec.x, vec.y, vec.z).play();
+                    } catch (LuaError e) {
+                        if (owner.luaRuntime != null)
+                            owner.luaRuntime.error(e);
+                    }
                 }
             });
 

@@ -4,7 +4,6 @@ import com.llamalad7.mixinextras.sugar.Local;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import net.minecraft.client.Camera;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
@@ -63,7 +62,7 @@ public class EntityRenderDispatcherMixin {
         Integer entityId = ((FiguraEntityRenderStateExtension)entityRenderState).figura$getEntityId();
         if (entityId == null)
             return;
-        Entity entity = Minecraft.getInstance().level.getEntity(entityId);
+        Entity entity = AvatarManager.getCachedEntity(entityId);
         if (entity == null)
             return;
         Entity owner = entity.getFirstPassenger();

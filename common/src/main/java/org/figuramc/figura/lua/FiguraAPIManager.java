@@ -26,6 +26,8 @@ import org.figuramc.figura.lua.api.particle.LuaParticle;
 import org.figuramc.figura.lua.api.particle.ParticleAPI;
 import org.figuramc.figura.lua.api.ping.PingAPI;
 import org.figuramc.figura.lua.api.ping.PingFunction;
+import org.figuramc.figura.lua.api.popup.PopupAPI;
+import org.figuramc.figura.lua.api.popup.PopupInput;
 import org.figuramc.figura.lua.api.sound.LuaSound;
 import org.figuramc.figura.lua.api.sound.SoundAPI;
 import org.figuramc.figura.lua.api.vanilla_model.VanillaGroupPart;
@@ -112,6 +114,9 @@ public class FiguraAPIManager {
         add(Page.class);
         add(Action.class);
 
+        add(PopupAPI.class);
+        add(PopupInput.class);
+
         add(VectorsAPI.class);
         add(MatricesAPI.class);
 
@@ -132,6 +137,8 @@ public class FiguraAPIManager {
         add(HostAPI.class);
 
         add(RendererAPI.class);
+
+        add(LuaRenderTypesAPI.class);
 
         add(ClientAPI.class);
 
@@ -177,7 +184,10 @@ public class FiguraAPIManager {
         put("host", r -> r.host = new HostAPI(r.owner));
         put("nameplate", r -> r.nameplate = new NameplateAPI());
         put("renderer", r -> r.renderer = new RendererAPI(r.owner));
+        put("render_types", r -> new LuaRenderTypesAPI(r.owner));
+        put("lua_types", r -> new LuaRenderTypesAPI(r.owner));
         put("action_wheel", r -> r.action_wheel = new ActionWheelAPI(r.owner));
+        put("popup", r -> r.popup = new PopupAPI(r.owner));
         put("animations", r -> new AnimationAPI(r.owner));
         put("client", r -> ClientAPI.INSTANCE);
         put("particles", r -> new ParticleAPI(r.owner));

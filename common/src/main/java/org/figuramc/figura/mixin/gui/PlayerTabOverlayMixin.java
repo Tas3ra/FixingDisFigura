@@ -46,7 +46,7 @@ public class PlayerTabOverlayMixin {
                 TextUtils.collapseLineSeparators(custom.getJson().copy()) : name;
 
         // name
-        replacement = TextUtils.replaceInText(replacement, "\\$\\{name\\}", name);
+        replacement = TextUtils.replaceNamePlaceholders(replacement, name);
 
         // badges
         replacement = Badges.appendBadges(replacement, uuid, config > 1);
@@ -54,7 +54,7 @@ public class PlayerTabOverlayMixin {
         // trim
         replacement = TextUtils.trim(replacement);
 
-        text = TextUtils.replaceInText(text, "\\b" + Pattern.quote(playerInfo.getProfile().name()) + "\\b", replacement);
+        text = TextUtils.replaceInTextPreservingInteraction(text, "\\b" + Pattern.quote(playerInfo.getProfile().name()) + "\\b", replacement);
 
         cir.setReturnValue(text);
     }

@@ -31,6 +31,7 @@ import org.joml.Vector4f;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
@@ -44,10 +45,12 @@ public abstract class LevelRendererMixin {
     @Shadow @Final private EntityRenderDispatcher entityRenderDispatcher;
     @Shadow @Final private RenderBuffers renderBuffers;
     @Shadow @Final private Minecraft minecraft;
+    @Unique private EntityRenderState figura$cachedAvatarState;
+    @Unique private Avatar figura$cachedAvatar;
 
     @ModifyArg(method = "submitEntities", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/entity/EntityRenderDispatcher;submit(Lnet/minecraft/client/renderer/entity/state/EntityRenderState;Lnet/minecraft/client/renderer/state/CameraRenderState;DDDLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;)V"))
     private <S extends EntityRenderState> S renderLevelRenderEntity(S entityRenderState) {
-        Avatar avatar = AvatarManager.getAvatar(entityRenderState);
+        Avatar avatar = figura$getAvatar(entityRenderState);
         if (avatar != null)
             avatar.renderMode = EntityRenderMode.RENDER;
         return entityRenderState;
@@ -57,15 +60,16 @@ public abstract class LevelRendererMixin {
     private <S extends EntityRenderState> void renderEntity(PoseStack poseStack, LevelRenderState levelRenderState, SubmitNodeCollector submitNodeCollector, CallbackInfo ci, @Local S entityRenderState) {
         Integer entityId = ((FiguraEntityRenderStateExtension)entityRenderState).figura$getEntityId();
         if (entityId == null) return;
-        Entity entity = Minecraft.getInstance().level.getEntity(entityId);
-        float tickDelta = ((FiguraEntityRenderStateExtension)entityRenderState).figura$getTickDelta();
 
-        Avatar av = AvatarManager.getAvatar(entityRenderState);
-
+        Avatar av = figura$getAvatar(entityRenderState);
         if (av == null)
             return;
 
+        Entity entity = AvatarManager.getCachedEntity(entityId);
+        if (entity == null)
+            return;
 
+        float tickDelta = ((FiguraEntityRenderStateExtension)entityRenderState).figura$getTickDelta();
         NodeCollectorExtension collectorExt = (NodeCollectorExtension) submitNodeCollector;
 
         collectorExt.submitFiguraModel(av, entityRenderState, ((avatar, entityState, multiBufferSource) -> {
@@ -88,7 +92,39 @@ public abstract class LevelRendererMixin {
 
             return null;
         }));
+    }
 
+    @Inject(method = "submitEntities", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/entity/EntityRenderDispatcher;submit(Lnet/minecraft/client/renderer/entity/state/EntityRenderState;Lnet/minecraft/client/renderer/state/CameraRenderState;DDDLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;)V", shift = At.Shift.AFTER))
+    private void afterRenderEntity(PoseStack poseStack, LevelRenderState levelRenderState, SubmitNodeCollector submitNodeCollector, CallbackInfo ci) {
+        figura$clearAvatarCache();
+    }
+
+    @Inject(method = "submitEntities", at = @At("RETURN"))
+    private void afterSubmitEntities(PoseStack poseStack, LevelRenderState levelRenderState, SubmitNodeCollector submitNodeCollector, CallbackInfo ci) {
+        figura$clearAvatarCache();
+    }
+
+    @Unique
+    private Avatar figura$getAvatar(EntityRenderState entityRenderState) {
+        if (figura$cachedAvatarState == entityRenderState)
+            return figura$cachedAvatar;
+
+        figura$cachedAvatarState = entityRenderState;
+        figura$cachedAvatar = AvatarManager.getAvatar(entityRenderState);
+        return figura$cachedAvatar;
+    }
+
+    @Unique
+    private void figura$clearAvatarCache(EntityRenderState entityRenderState) {
+        if (figura$cachedAvatarState == entityRenderState) {
+            figura$clearAvatarCache();
+        }
+    }
+
+    @Unique
+    private void figura$clearAvatarCache() {
+        figura$cachedAvatarState = null;
+        figura$cachedAvatar = null;
     }
 
     // TODO: Neo does not boot, complains method must be static but it won't compile if it is, the hell?

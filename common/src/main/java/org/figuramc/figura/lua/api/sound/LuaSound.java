@@ -32,6 +32,7 @@ public class LuaSound {
     private final String id;
     private final SoundBuffer buffer;
     private final Sound sound;
+    private final int channels;
 
     private ChannelAccess.ChannelHandle handle;
     private boolean playing = false;
@@ -45,18 +46,19 @@ public class LuaSound {
     private String subtitle;
 
     public LuaSound(SoundBuffer buffer, String id, Avatar owner) {
-        this(null, buffer, id, Component.literal(id), owner);
+        this(null, buffer, id, Component.literal(id), owner, owner.getCustomSoundChannels(id));
     }
 
     public LuaSound(Sound sound, String id, Component subtitle, Avatar owner) {
-        this(sound, null, id, subtitle, owner);
+        this(sound, null, id, subtitle, owner, 1);
     }
 
-    private LuaSound(Sound sound, SoundBuffer buffer, String id, Component subtitle, Avatar owner) {
+    private LuaSound(Sound sound, SoundBuffer buffer, String id, Component subtitle, Avatar owner, int channels) {
         this.owner = owner;
         this.id = id;
         this.buffer = buffer;
         this.sound = sound;
+        this.channels = channels;
         this.subtitleText = subtitle;
         this.subtitle = subtitle == null ? null : subtitle.getString();
     }
@@ -83,6 +85,9 @@ public class LuaSound {
         // Only skip logic when we truely know the sound is currently playing
         if (this.playing && this.handle != null && !this.handle.isStopped())
             return this;
+
+        if (isRemoteStereoCustomSound())
+            throw new LuaError("Refusing to play stereo custom sound \"" + id + "\" from a remote avatar. Use mono OGG files for avatar world sounds.");
 
         if (!owner.soundsRemaining.use()) {
             owner.noPermissions.add(Permissions.SOUNDS);
@@ -117,6 +122,9 @@ public class LuaSound {
         // but the function cannot exit early past here (other than crashing) so its fine
         this.playing = true;
         AvatarManager.executeAll("playSoundEvent", avatar -> {
+            if (!avatar.hasEventHandlers("ON_PLAY_SOUND"))
+                return;
+
             boolean cancel = avatar.playSoundEvent(
                 this.getId(),
                 this.getPos(),
@@ -130,7 +138,7 @@ public class LuaSound {
                 if (cancel)
                     this.playing = false;
             }
-            else {
+            else if (cancel) {
                 avatar.noPermissions.add(Permissions.CANCEL_SOUNDS);
             }
         });
@@ -188,6 +196,10 @@ public class LuaSound {
         }
 
         return this;
+    }
+
+    private boolean isRemoteStereoCustomSound() {
+        return buffer != null && !owner.isHost && channels > 1;
     }
 
     @LuaWhitelist

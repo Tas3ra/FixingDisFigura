@@ -30,6 +30,7 @@ public class PanelSelectorWidget extends AbstractContainerElement {
                 add(s -> Pair.of(new BrowserScreen(s), PanelIcon.BROWSER));
                 add(s -> Pair.of(new WardrobeScreen(s), PanelIcon.WARDROBE));
                 add(s -> Pair.of(new PermissionsScreen(s), PanelIcon.PERMISSIONS));
+                add(s -> Pair.of(new LuaTypesScreen(s), PanelIcon.OTHER));
                 add(s -> Pair.of(new ConfigScreen(s), PanelIcon.SETTINGS));
                 add(s -> Pair.of(new HelpScreen(s), PanelIcon.HELP));
     }};

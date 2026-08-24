@@ -1,7 +1,6 @@
 package org.figuramc.figura.mixin.render.layers;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.model.player.PlayerModel;
@@ -68,7 +67,7 @@ public abstract class CapeLayerMixin extends RenderLayer<AvatarRenderState, Play
         fakeCloak.loadPose(realCloak.storePose());
 
         // REFERENCED FROM CODE IN CapeLayer (CapeFeatureRenderer for Yarn), logic now in ClientAvatarState
-        if (Minecraft.getInstance().level == null || !(Minecraft.getInstance().level.getEntity(playerRenderState.id) instanceof AbstractClientPlayer entity)) {
+        if (!(AvatarManager.getCachedEntity(playerRenderState.id) instanceof AbstractClientPlayer entity)) {
             avatar = null;
             return;
         }

@@ -73,10 +73,16 @@ public class AvatarManager {
     // -- avatar events -- // 
 
     public static void tickLoadedAvatars() {
+        Minecraft client = Minecraft.getInstance();
+        if (client.level == null) {
+            clearCEMAvatars();
+            return;
+        }
+
+        pruneEntityCache(client);
+
         if (panic)
             return;
-
-        Minecraft client = Minecraft.getInstance();
 
         // tick the avatars
         for (UserData user : LOADED_USERS.values()) {
@@ -91,12 +97,6 @@ public class AvatarManager {
         // CEM
         if (LOADED_CEM.isEmpty())
             return;
-
-        if (client.level == null) {
-            clearCEMAvatars();
-            ENTITY_CACHE.clear();
-            return;
-        }
 
         // unload entities
         IntSet toBeRemoved = new IntOpenHashSet();
@@ -123,6 +123,22 @@ public class AvatarManager {
                 FiguraMod.popProfiler();
             }
         }
+    }
+
+    private static void pruneEntityCache(Minecraft client) {
+        if (ENTITY_CACHE.isEmpty())
+            return;
+
+        IntSet toBeRemoved = new IntOpenHashSet();
+        for (Int2ObjectMap.Entry<Entity> entry : ENTITY_CACHE.int2ObjectEntrySet()) {
+            Entity cached = entry.getValue();
+            Entity current = client.level.getEntity(entry.getIntKey());
+            if (cached == null || cached.isRemoved() || current != cached)
+                toBeRemoved.add(entry.getIntKey());
+        }
+
+        for (int entity : toBeRemoved)
+            ENTITY_CACHE.remove(entity);
     }
 
     public static void executeAll(String src, Consumer<Avatar> consumer) {
@@ -266,10 +282,10 @@ public class AvatarManager {
         if (panic || Minecraft.getInstance().level == null || state == null) return null;
 
         if (state instanceof AvatarRenderState playerRenderState) {
-            return getAvatar(Minecraft.getInstance().level.getEntity(playerRenderState.id));
+            return getAvatar(getCachedEntity(playerRenderState.id));
         }
         Integer id = ((FiguraEntityRenderStateExtension)state).figura$getEntityId();
-        Entity entity = id != null ? Minecraft.getInstance().level.getEntity(id) : null;
+        Entity entity = id != null ? getCachedEntity(id) : null;
         return getAvatar(entity);
     }
 
@@ -277,10 +293,10 @@ public class AvatarManager {
         if (Minecraft.getInstance().level == null || state == null) return null;
 
         if (state instanceof AvatarRenderState playerRenderState) {
-            return Minecraft.getInstance().level.getEntity(playerRenderState.id);
+            return getCachedEntity(playerRenderState.id);
         }
         Integer id = ((FiguraEntityRenderStateExtension)state).figura$getEntityId();
-        return id != null ? Minecraft.getInstance().level.getEntity(id) : null;
+        return id != null ? getCachedEntity(id) : null;
     }
 
     // tries to get data from an entity

@@ -47,14 +47,14 @@ public class FiguraModelPartReader {
         customization.setPivot(piv);
 
         if (partCompound.contains("primary")) {
-            try {
-                customization.setPrimaryRenderType(FiguraRenderTypes.valueOf(partCompound.getStringOr("primary", "")));
-            } catch (Exception ignored) {}
+            FiguraRenderTypes renderType = FiguraRenderTypes.byName(partCompound.getStringOr("primary", ""));
+            if (renderType != null)
+                customization.setPrimaryRenderType(renderType);
         }
         if (partCompound.contains("secondary")) {
-            try {
-                customization.setSecondaryRenderType(FiguraRenderTypes.valueOf(partCompound.getStringOr("secondary", "")));
-            } catch (Exception ignored) {}
+            FiguraRenderTypes renderType = FiguraRenderTypes.byName(partCompound.getStringOr("secondary", ""));
+            if (renderType != null)
+                customization.setSecondaryRenderType(renderType);
         }
 
         if (partCompound.contains("vsb"))

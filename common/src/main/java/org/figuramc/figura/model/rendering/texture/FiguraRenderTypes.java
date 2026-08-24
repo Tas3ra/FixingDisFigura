@@ -18,12 +18,10 @@ import net.minecraft.util.TriState;
 import net.minecraft.util.Util;
 import org.figuramc.figura.utils.FiguraIdentifier;
 
-import java.util.Optional;
-import java.util.OptionalDouble;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
-public enum FiguraRenderTypes {
+public enum FiguraRenderTypes implements FiguraRenderLayer {
     NONE(null),
 
     CUTOUT(RenderTypes::entityCutoutNoCull),
@@ -72,6 +70,11 @@ public enum FiguraRenderTypes {
         return offset;
     }
 
+    @Override
+    public FiguraRenderTypes baseType() {
+        return this;
+    }
+
     public boolean isFullBright() {
         return this == EMISSIVE || this == EMISSIVE_SOLID || this == EYES || this == CUTOUT_EMISSIVE_SOLID;
     }
@@ -85,6 +88,17 @@ public enum FiguraRenderTypes {
             return func.apply(id);
 
         return id == null || func == null ? null : func.apply(id);
+    }
+
+    public static FiguraRenderTypes byName(String name) {
+        if (name == null)
+            return null;
+
+        try {
+            return valueOf(LuaRenderTypeRegistry.normalize(name));
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
     }
 
     private abstract static class FiguraRenderType extends RenderType {

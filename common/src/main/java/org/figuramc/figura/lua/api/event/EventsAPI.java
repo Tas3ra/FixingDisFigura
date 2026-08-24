@@ -151,6 +151,11 @@ public class EventsAPI {
         return events.get(key.toUpperCase(Locale.US));
     }
 
+    public boolean hasHandlers(String key) {
+        LuaEvent event = __index(key);
+        return event != null && event.hasHandlers();
+    }
+
     @LuaWhitelist
     public void __newindex(@LuaNotNil String key, LuaFunction func) {
         LuaEvent event = __index(key.toUpperCase(Locale.US));

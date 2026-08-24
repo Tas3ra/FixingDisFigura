@@ -4,7 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import org.figuramc.figura.math.matrix.FiguraMat3;
 import org.figuramc.figura.math.matrix.FiguraMat4;
 import org.figuramc.figura.math.vector.FiguraVec3;
-import org.figuramc.figura.model.rendering.texture.FiguraRenderTypes;
+import org.figuramc.figura.model.rendering.texture.FiguraRenderLayer;
 
 import java.util.Stack;
 
@@ -47,9 +47,10 @@ public class PartCustomization {
     public final FiguraVec3 color2 = FiguraVec3.of(1, 1, 1);
     public Float alpha = null;
     public Integer light = null;
+    public boolean lightOverride = false;
     public Integer overlay = null;
 
-    private FiguraRenderTypes primaryRenderType, secondaryRenderType;
+    private FiguraRenderLayer primaryRenderType, secondaryRenderType;
     public TextureCustomization primaryTexture, secondaryTexture;
 
     public void applyToStack(PoseStack stack) {
@@ -297,16 +298,16 @@ public class PartCustomization {
 
     // -- Render type thingies --// 
 
-    public void setPrimaryRenderType(FiguraRenderTypes type) {
+    public void setPrimaryRenderType(FiguraRenderLayer type) {
         primaryRenderType = type;
     }
-    public FiguraRenderTypes getPrimaryRenderType() {
+    public FiguraRenderLayer getPrimaryRenderType() {
         return primaryRenderType;
     }
-    public void setSecondaryRenderType(FiguraRenderTypes type) {
+    public void setSecondaryRenderType(FiguraRenderLayer type) {
         secondaryRenderType = type;
     }
-    public FiguraRenderTypes getSecondaryRenderType() {
+    public FiguraRenderLayer getSecondaryRenderType() {
         return secondaryRenderType;
     }
 
@@ -328,6 +329,7 @@ public class PartCustomization {
         target.color2.set(color2);
         target.alpha = alpha;
         target.light = light;
+        target.lightOverride = lightOverride;
         target.overlay = overlay;
         target.needsMatrixRecalculation = needsMatrixRecalculation;
         target.visible = visible;
@@ -357,6 +359,7 @@ public class PartCustomization {
 
         if (other.light != null)
             light = other.light;
+        lightOverride = lightOverride || other.lightOverride;
 
         if (other.overlay != null)
             overlay = other.overlay;

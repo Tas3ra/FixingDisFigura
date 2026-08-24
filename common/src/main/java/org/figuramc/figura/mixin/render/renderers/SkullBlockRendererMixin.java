@@ -27,7 +27,10 @@ import org.figuramc.figura.ducks.NodeCollectorExtension;
 import org.figuramc.figura.ducks.SkullBlockRenderStateExtension;
 import org.figuramc.figura.ducks.SkullBlockRendererAccessor;
 import org.figuramc.figura.ducks.SkullBlockRendererHelper;
+import org.figuramc.figura.gui.PopupMenu;
+import org.figuramc.figura.gui.ViewerVisibilityManager;
 import org.figuramc.figura.lua.api.entity.EntityAPI;
+import org.figuramc.figura.lua.api.popup.PopupAPI;
 import org.figuramc.figura.lua.api.world.BlockStateAPI;
 import org.figuramc.figura.lua.api.world.ItemStackAPI;
 import org.figuramc.figura.model.rendering.EntityRenderMode;
@@ -72,6 +75,9 @@ public abstract class SkullBlockRendererMixin implements BlockEntityRenderer<Sku
         if (AvatarManager.panic || localAvatar == null || localAvatar.permissions.get(Permissions.CUSTOM_SKULL) == 0)
             return;
 
+        if (!ViewerVisibilityManager.areCustomSkullsVisible(localAvatar.owner))
+            return;
+
         if (figura$isUnownedItemRender(localBlock, localItem, localEntity, localMode))
             return;
 
@@ -101,13 +107,20 @@ public abstract class SkullBlockRendererMixin implements BlockEntityRenderer<Sku
             FiguraMod.pushProfiler(localBlock != null ? localBlock.blockPos.toString() : String.valueOf(i));
 
             FiguraMod.pushProfiler("event");
-            boolean bool = localAvatar.skullRenderEvent(tickDelta, b, i, e, m);
+            PopupAPI.pushContext(PopupMenu.contextKeyForHead(localBlock == null ? null : localBlock.blockPos, localItem, localEntity));
+            boolean bool;
+            try {
+                bool = localAvatar.skullRenderEvent(tickDelta, b, i, e, m);
 
-            // render skull :3
-            FiguraMod.popPushProfiler("render");
-            boolean guiItem = localMode == SkullBlockRendererAccessor.SkullRenderMode.GUI;
-            if (bool || localAvatar.skullRender(poseStack, bufferSource, light, direction, yaw, false, guiItem))
-                return false;
+                // render skull :3
+                FiguraMod.popPushProfiler("render");
+                boolean guiItem = localMode == SkullBlockRendererAccessor.SkullRenderMode.GUI;
+                boolean renderedSkull = localAvatar.skullRender(poseStack, bufferSource, light, direction, yaw, false, guiItem);
+                if (bool || renderedSkull)
+                    return false;
+            } finally {
+                PopupAPI.popContext();
+            }
 
             FiguraMod.popProfiler(5);
             return true;
@@ -141,10 +154,16 @@ public abstract class SkullBlockRendererMixin implements BlockEntityRenderer<Sku
 
             FiguraMod.pushProfiler(localBlock != null ? localBlock.blockPos.toString() : String.valueOf(i));
             FiguraMod.pushProfiler("event");
-            boolean bool = localAvatar.skullRenderEvent(Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(true), b, i, e, eventMode);
+            PopupAPI.pushContext(PopupMenu.contextKeyForHead(localBlock == null ? null : localBlock.blockPos, localItem, localEntity));
+            try {
+                boolean bool = localAvatar.skullRenderEvent(Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(true), b, i, e, eventMode);
 
-            FiguraMod.popPushProfiler("render");
-            rendered[0] = bool || localAvatar.skullRender(guiStack, bufferSource, light, direction, yaw, true, true);
+                FiguraMod.popPushProfiler("render");
+                boolean renderedSkull = localAvatar.skullRender(guiStack, bufferSource, light, direction, yaw, true, true);
+                rendered[0] = bool || renderedSkull;
+            } finally {
+                PopupAPI.popContext();
+            }
 
             FiguraMod.popProfiler(5);
             return null;
@@ -182,6 +201,8 @@ public abstract class SkullBlockRendererMixin implements BlockEntityRenderer<Sku
         if (!AvatarManager.panic && skullBlockRenderState.skullType == SkullBlock.Types.PLAYER) {
             ResolvableProfile profile = skullBlockEntity.getOwnerProfile();
             skullAvatar = AvatarManager.getAvatarForProfile(profile);
+            if (skullAvatar != null && !ViewerVisibilityManager.areCustomSkullsVisible(skullAvatar.owner))
+                skullAvatar = null;
         }
 
         ((SkullBlockRenderStateExtension)skullBlockRenderState).figura$setAvatar(skullAvatar);

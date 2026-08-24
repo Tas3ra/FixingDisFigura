@@ -4,7 +4,6 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
 import com.mojang.blaze3d.vertex.PoseStack;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.model.HeadedModel;
 import net.minecraft.client.model.object.skull.SkullModelBase;
@@ -108,8 +107,8 @@ public abstract class CustomHeadLayerMixin<S extends LivingEntityRenderState, M 
                 SkullBlockRendererHelper.setAvatar(AvatarManager.getAvatarForItem(itemStack));
                 figura$setHeadEntityRenderMode(localAvatar);
                 Integer id = ((FiguraEntityRenderStateExtension)entityState).figura$getEntityId();
-                if (id != null && Minecraft.getInstance().level != null)
-                    SkullBlockRendererAccessor.setEntity(Minecraft.getInstance().level.getEntity(id));
+                if (id != null)
+                    SkullBlockRendererAccessor.setEntity(AvatarManager.getCachedEntity(id));
                 SkullBlockRendererAccessor.setRenderMode(SkullBlockRendererAccessor.SkullRenderMode.HEAD);
                 SkullBlockRenderer.submitSkull(null, 0f, entityState.wornHeadAnimationPos, stack, submitNodeCollector, i, skullModelBase,
                         renderType, entityState.outlineColor, null);
@@ -151,8 +150,8 @@ public abstract class CustomHeadLayerMixin<S extends LivingEntityRenderState, M 
         Avatar wearerAvatar = AvatarManager.getAvatar(livingEntityRenderState);
         figura$setHeadEntityRenderMode(wearerAvatar);
         Integer id = ((FiguraEntityRenderStateExtension)livingEntityRenderState).figura$getEntityId();
-        if (id != null && Minecraft.getInstance().level != null && Minecraft.getInstance().level.getEntity(id) != null)
-            SkullBlockRendererAccessor.setEntity(Minecraft.getInstance().level.getEntity(id));
+        if (id != null)
+            SkullBlockRendererAccessor.setEntity(AvatarManager.getCachedEntity(id));
         SkullBlockRendererAccessor.setRenderMode(SkullBlockRendererAccessor.SkullRenderMode.HEAD);
     }
 

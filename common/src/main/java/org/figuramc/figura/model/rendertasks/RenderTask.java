@@ -16,7 +16,7 @@ import org.figuramc.figura.math.vector.FiguraVec2;
 import org.figuramc.figura.math.vector.FiguraVec3;
 import org.figuramc.figura.model.FiguraModelPart;
 import org.figuramc.figura.model.PartCustomization;
-import org.figuramc.figura.model.rendering.texture.FiguraRenderTypes;
+import org.figuramc.figura.model.rendering.texture.FiguraRenderLayer;
 import org.figuramc.figura.utils.LuaUtils;
 
 @LuaWhitelist
@@ -54,7 +54,7 @@ public abstract class RenderTask {
 
     public void render(PartCustomization.PartCustomizationStack stack, MultiBufferSource buffer, int light, int overlay) {
         customization.recalculate();
-        FiguraRenderTypes parentPrimaryRenderType = stack.peek().getPrimaryRenderType();
+        FiguraRenderLayer parentPrimaryRenderType = stack.peek().getPrimaryRenderType();
         boolean inheritFullBright = customization.light == null && parentPrimaryRenderType != null && parentPrimaryRenderType.isFullBright();
         stack.push(customization);
         try {
@@ -137,11 +137,13 @@ public abstract class RenderTask {
     public RenderTask setLight(Object blockLight, Double skyLight) {
         if (blockLight == null) {
             customization.light = null;
+            customization.lightOverride = false;
             return this;
         }
 
         FiguraVec2 lightVec = LuaUtils.parseVec2("setLight", blockLight, skyLight);
         customization.light = LightTexture.pack((int) lightVec.x, (int) lightVec.y);
+        customization.lightOverride = true;
         return this;
     }
 
